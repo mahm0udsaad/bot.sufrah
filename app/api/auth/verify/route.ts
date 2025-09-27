@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { formatPhoneNumber } from "@/lib/auth-utils"
-import { cookies } from "next/headers"
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,20 +45,10 @@ export async function POST(request: NextRequest) {
       verification_expires_at: null,
     })
 
-    const cookieStore = await cookies()
-    cookieStore.set("user-phone", formattedPhone, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60, // 7 days
-    })
-
-    console.log("[v0] Cookie set for phone:", formattedPhone) // Add debug logging
-
     // Log usage
     await db.logUsage(user.id, "user_signin")
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: "Verification successful",
       user: {
@@ -69,6 +58,18 @@ export async function POST(request: NextRequest) {
         is_verified: updatedUser.is_verified,
       },
     })
+
+    response.cookies.set("user-phone", formattedPhone, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60, // 7 days
+      path: "/",
+    })
+
+    console.log("[v0] Cookie set for phone:", formattedPhone) // Add debug logging
+
+    return response
   } catch (error) {
     console.error("Verification error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })

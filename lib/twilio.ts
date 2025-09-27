@@ -3,6 +3,14 @@ import twilio from "twilio"
 const accountSid = process.env.TWILIO_ACCOUNT_SID
 const authToken = process.env.TWILIO_AUTH_TOKEN
 const smsFrom = process.env.TWILIO_SMS_FROM
+const twilioDebug = process.env.TWILIO_DEBUG === "true"
+
+function maskPhoneNumber(phone: string | null | undefined) {
+  if (!phone) return "unknown"
+  const digits = phone.replace(/[^\d+]/g, "")
+  if (digits.length <= 4) return digits
+  return `***${digits.slice(-4)}`
+}
 
 let client: ReturnType<typeof twilio> | null = null
 
@@ -38,12 +46,12 @@ export function generateVerificationCode(length: number = 6): string {
     .padStart(length, '0')
 }
 
-export async function sendVerificationSMS(phoneNumber: string) {
+export async function sendVerificationSMS(phoneNumber: string, providedCode?: string) {
   try {
     // Input validation
     if (!phoneNumber || !/^\+[1-9]\d{1,14}$/.test(phoneNumber)) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: "Invalid phone number format. Use E.164 format (+1234567890)" 
       }
     }
@@ -76,7 +84,7 @@ export async function sendVerificationSMS(phoneNumber: string) {
     }
 
     // Generate verification code
-    const code = generateVerificationCode(6)
+    const code = providedCode ?? generateVerificationCode(6)
     const expiresAt = Date.now() + (10 * 60 * 1000) // 10 minutes expiration
 
     // Store verification code
@@ -86,12 +94,24 @@ export async function sendVerificationSMS(phoneNumber: string) {
       attempts: 0
     })
 
+    if (twilioDebug) {
+      console.log(
+        `[twilio] Attempting SMS send | account=${maskPhoneNumber(accountSid)} | from=${smsFrom} | to=${maskPhoneNumber(phoneNumber)} | code=${code}`,
+      )
+    }
+
     // Send SMS using Twilio Messages API
     const message = await twilioClient.messages.create({
-      body: `Your verification code is: ${code}. This code will expire in 10 minutes.`,
+      body: `Your Sufrah verification code is: ${code}. This code will expire in 10 minutes.`,
       from: smsFrom,
       to: phoneNumber,
     })
+
+    if (twilioDebug) {
+      console.log(
+        `[twilio] SMS queued | sid=${message.sid} | status=${message.status} | to=${maskPhoneNumber(phoneNumber)}`,
+      )
+    }
 
     // Update rate limiting
     rateLimits.set(rateLimitKey, {
@@ -104,7 +124,7 @@ export async function sendVerificationSMS(phoneNumber: string) {
       messageId: message.sid,
       message: "Verification code sent via SMS",
       // Don't return the actual code in production
-      ...(process.env.NODE_ENV === 'development' && { code })
+      ...(process.env.NODE_ENV === "development" && { code })
     }
 
   } catch (error: any) {

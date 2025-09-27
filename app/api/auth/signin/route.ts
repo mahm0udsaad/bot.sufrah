@@ -9,16 +9,13 @@ async function dispatchVerificationCode(
 ): Promise<{ success: boolean; message?: string; code?: string; error?: string }> {
   console.log(`[v0] SMS would be sent to ${phone}: Your verification code is ${code}`)
 
-  // For development, return success with the code
-  if (process.env.NODE_ENV === "development") {
-    return {
-      success: true,
-      message: "SMS sent (development mode)",
-      code, // Include code for testing
-    }
-  }
+  const sendInDev = process.env.TWILIO_SEND_IN_DEV === "true"
 
   // Production: send via Twilio SMS
+  if (process.env.NODE_ENV === "development" && sendInDev) {
+    console.log("[v0] TWILIO_SEND_IN_DEV enabled - sending real SMS in development mode")
+  }
+
   const result = await sendVerificationCode(phone, code)
 
   if (!result.success) {

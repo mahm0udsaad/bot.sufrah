@@ -118,7 +118,15 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     }
 
     case "SET_SELECTED_CONVERSATION":
-      return { ...state, selectedConversationId: action.payload }
+      return {
+        ...state,
+        selectedConversationId: action.payload,
+        conversations: state.conversations.map((conv) =>
+          conv.id === action.payload
+            ? { ...conv, unread_count: 0 }
+            : conv
+        ),
+      };
 
     case "SET_BOT_STATUS":
       return { ...state, botStatus: action.payload }

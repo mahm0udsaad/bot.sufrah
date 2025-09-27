@@ -1,4 +1,4 @@
-import twilio from "twilio"
+import { Buffer } from "node:buffer"
 
 const accountSid = process.env.TWILIO_ACCOUNT_SID
 const authToken = process.env.TWILIO_AUTH_TOKEN
@@ -12,20 +12,6 @@ function maskPhoneNumber(phone: string | null | undefined) {
   return `***${digits.slice(-4)}`
 }
 
-let client: ReturnType<typeof twilio> | null = null
-
-function getClient() {
-  if (!accountSid || !authToken) {
-    return null
-  }
-
-  if (!client) {
-    client = twilio(accountSid, authToken)
-  }
-
-  return client
-}
-
 export async function sendVerificationSMS(phoneNumber: string, code: string) {
   try {
     // Input validation
@@ -36,8 +22,7 @@ export async function sendVerificationSMS(phoneNumber: string, code: string) {
       }
     }
 
-    const twilioClient = getClient()
-    if (!twilioClient) {
+    if (!accountSid || !authToken) {
       return {
         success: false,
         error: "SMS service not configured - missing Twilio credentials",
@@ -57,36 +42,49 @@ export async function sendVerificationSMS(phoneNumber: string, code: string) {
       )
     }
 
-    const message = await twilioClient.messages.create({
-      body: `Your Sufrah verification code is: ${code}. This code will expire in 10 minutes.`,
-      from: smsFrom,
-      to: phoneNumber,
+    const body = new URLSearchParams({
+      Body: `Your Sufrah verification code is: ${code}. This code will expire in 10 minutes.`,
+      From: smsFrom,
+      To: phoneNumber,
     })
+
+    const auth = Buffer.from(`${accountSid}:${authToken}`).toString("base64")
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null)
+      const message =
+        (typeof errorBody?.message === "string" && errorBody.message) ||
+        (typeof errorBody?.error_message === "string" && errorBody.error_message) ||
+        response.statusText ||
+        "Failed to send verification SMS"
+
+      if (twilioDebug) {
+        console.error("[twilio] API error", response.status, message, errorBody)
+      }
+
+      return {
+        success: false,
+        error: message,
+      }
+    }
+
+    const messageData = await response.json()
 
     return {
       success: true,
-      messageId: message.sid,
+      messageId: messageData.sid,
       message: "Verification code sent via SMS",
     }
   } catch (error: any) {
     console.error("Twilio SMS error:", error)
-
-    // Handle specific Twilio error codes
-    if (error.code === 20003) {
-      return { success: false, error: "Authentication failed - check Twilio credentials" }
-    }
-    if (error.code === 21211) {
-      return { success: false, error: "Invalid phone number" }
-    }
-    if (error.code === 21608) {
-      return { success: false, error: "Phone number is not a valid mobile number" }
-    }
-    if (error.code === 21614) {
-      return { success: false, error: "Phone number is not SMS capable" }
-    }
-    if (error.code === 30007) {
-      return { success: false, error: "Message delivery failed - carrier rejected" }
-    }
 
     return {
       success: false,

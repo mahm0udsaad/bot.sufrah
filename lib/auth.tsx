@@ -81,12 +81,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ phone }),
       })
 
-      const data = await response.json()
+      const contentType = response.headers.get("content-type") || ""
+      let body: unknown = null
+
+      if (contentType.includes("application/json")) {
+        body = await response.json()
+      } else {
+        const text = await response.text()
+        body = text ? { message: text } : null
+      }
+
+      const bodyRecord = body && typeof body === "object" ? (body as Record<string, unknown>) : null
+      const bodyMessage = bodyRecord?.message
+      const fallbackMessage = response.statusText || "Failed to send verification code"
+      const resolvedMessage = typeof bodyMessage === "string" && bodyMessage.trim().length > 0 ? bodyMessage : fallbackMessage
 
       if (response.ok) {
-        return { success: true, message: data.message || "Verification code sent" }
+        return {
+          success: true,
+          message: resolvedMessage || "Verification code sent",
+        }
       } else {
-        return { success: false, message: data.message || "Failed to send verification code" }
+        return {
+          success: false,
+          message: resolvedMessage || "Failed to send verification code",
+        }
       }
     } catch (error) {
       console.error("Sign in error:", error)
@@ -104,14 +123,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ phone, code }),
       })
 
-      const data = await response.json()
+      const contentType = response.headers.get("content-type") || ""
+      let body: unknown = null
+
+      if (contentType.includes("application/json")) {
+        body = await response.json()
+      } else {
+        const text = await response.text()
+        body = text ? { message: text } : null
+      }
+
+      const bodyRecord = body && typeof body === "object" ? (body as Record<string, unknown>) : null
+      const bodyMessage = bodyRecord?.message
+      const fallbackMessage = response.statusText || "Verification failed"
+      const resolvedMessage = typeof bodyMessage === "string" && bodyMessage.trim().length > 0 ? bodyMessage : fallbackMessage
 
       if (response.ok) {
         // Refresh user data after successful verification
         await fetchUser()
-        return { success: true, message: data.message || "Successfully verified" }
+        return {
+          success: true,
+          message: resolvedMessage || "Successfully verified",
+        }
       } else {
-        return { success: false, message: data.message || "Invalid verification code" }
+        return {
+          success: false,
+          message: resolvedMessage || "Invalid verification code",
+        }
       }
     } catch (error) {
       console.error("Verify code error:", error)

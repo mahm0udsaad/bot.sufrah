@@ -3,6 +3,8 @@ import { db } from "@/lib/db"
 import { formatPhoneNumber, generateVerificationCode } from "@/lib/auth-utils"
 import { sendVerificationSMS as sendVerificationCode } from "@/lib/twilio"
 
+export const runtime = "nodejs"
+
 async function dispatchVerificationCode(
   phone: string,
   code: string,

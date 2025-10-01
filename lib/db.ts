@@ -261,4 +261,34 @@ export const db = {
     `
     return profile
   },
+
+  async updateRestaurantProfile(
+    userId: string,
+    data: Partial<{
+      name: string
+      description: string
+      phone: string
+      whatsapp_number: string
+      address: string
+      is_active: boolean
+    }>,
+  ) {
+    const updates = Object.entries(data).filter(([_, value]) => value !== undefined)
+    if (updates.length === 0) {
+      throw new Error("No valid fields to update for restaurant profile")
+    }
+
+    let setClause = ""
+    const values: any[] = []
+    updates.forEach(([key, value], index) => {
+      if (index > 0) setClause += ", "
+      setClause += `${key} = $${index + 1}`
+      values.push(value)
+    })
+
+    values.push(userId)
+    const query = `UPDATE restaurant_profiles SET ${setClause}, updated_at = NOW() WHERE user_id = $${values.length} RETURNING *`
+    const [profile] = await sql.query(query, values)
+    return profile
+  },
 }

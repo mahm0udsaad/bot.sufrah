@@ -7,6 +7,7 @@ import { Bell, Menu, Search, Settings, Store, MessageSquare, Package, BarChart3,
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { SignOutButton } from "@/components/sign-out-button"
 import { cn } from "@/lib/utils"
 
 const navigation = [
@@ -65,6 +66,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 </a>
               ))}
             </nav>
+            <div className="absolute bottom-0 left-0 right-0 border-t border-sidebar-border p-4 bg-sidebar">
+              <SignOutButton variant="ghost" size="sm" className="w-full justify-start" />
+            </div>
           </div>
         </div>
       )}
@@ -103,6 +107,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               ))}
             </ul>
           </nav>
+          <div className="mt-auto border-t border-sidebar-border pt-4">
+            <SignOutButton variant="ghost" size="sm" className="w-full justify-start" />
+          </div>
         </div>
       </div>
 

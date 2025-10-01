@@ -1,14 +1,18 @@
-export function formatPhoneNumber(phone: string): string {
-  // Remove all non-digit characters
+// phone-utils.ts
+export type Channel = "sms" | "whatsapp"
+
+export function formatPhoneNumber(phone: string, channel: Channel = "sms"): string {
+  // Remove all non-digits
   const cleaned = phone.replace(/\D/g, "")
 
-  if (phone.startsWith("+")) {
-    // If it already starts with +, just clean and return
-    return "+" + cleaned
+  // Ensure E.164 format
+  const e164 = phone.startsWith("+") ? "+" + cleaned : "+" + cleaned
+
+  if (channel === "whatsapp") {
+    return `whatsapp:${e164}`
   }
 
-  // If no country code, add + to the cleaned number (let the user's input determine the country)
-  return "+" + cleaned
+  return e164
 }
 
 export function generateVerificationCode(): string {

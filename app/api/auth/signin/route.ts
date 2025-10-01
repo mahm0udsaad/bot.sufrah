@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { formatPhoneNumber, generateVerificationCode } from "@/lib/auth-utils"
-import { sendVerificationSMS } from "@/lib/twilio"
+import { sendVerificationWhatsApp } from "@/lib/twilio"
 
 export const runtime = "nodejs"
 
@@ -35,9 +35,8 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // In development, you might want to avoid sending SMS to save costs.
-    // I'm keeping the sending logic for now.
-    const smsResult = await sendVerificationSMS(formattedPhone, verificationCode)
+    // Send verification via WhatsApp instead of SMS
+    const smsResult = await sendVerificationWhatsApp(formattedPhone, verificationCode)
 
     if (!smsResult.success) {
       return NextResponse.json(

@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { jwtVerify } from "jose"
+import prisma from "@/lib/prisma"
 import { db } from "@/lib/db"
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
@@ -29,8 +30,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
-    // Get daily usage data for the last 7 days
-    const usageData = await db.sql`
+    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
+
+    if (!restaurant) {
+      return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
+    }
+
+    const usageData = await prisma.$queryRaw<any[]>`
       WITH date_series AS (
         SELECT generate_series(
           CURRENT_DATE - INTERVAL '6 days',
@@ -40,21 +46,19 @@ export async function GET(request: NextRequest) {
       ),
       daily_messages AS (
         SELECT 
-          DATE(m.sent_at) as day,
+          DATE(m.created_at) as day,
           COUNT(*) as messages
-        FROM messages m
-        JOIN conversations c ON c.id = m.conversation_id
-        WHERE c.user_id = ${userId}
-          AND m.sent_at >= CURRENT_DATE - INTERVAL '6 days'
-        GROUP BY DATE(m.sent_at)
+        FROM "Message" m
+        WHERE m.restaurant_id = ${restaurant.id}
+          AND m.created_at >= CURRENT_DATE - INTERVAL '6 days'
+        GROUP BY DATE(m.created_at)
       ),
       daily_orders AS (
         SELECT 
           DATE(o.created_at) as day,
           COUNT(*) as orders
-        FROM orders o
-        JOIN conversations c ON c.id = o.conversation_id
-        WHERE c.user_id = ${userId}
+        FROM "Order" o
+        WHERE o.restaurant_id = ${restaurant.id}
           AND o.created_at >= CURRENT_DATE - INTERVAL '6 days'
         GROUP BY DATE(o.created_at)
       )

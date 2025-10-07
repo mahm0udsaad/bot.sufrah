@@ -18,9 +18,9 @@ export async function GET(request: NextRequest) {
     }
 
     // TODO: Replace with main Order System API
-    const profile = await orderApi.getRestaurantProfile()
+    const restaurant = await db.getPrimaryRestaurantByUserId(user.id)
 
-    return NextResponse.json(profile)
+    return NextResponse.json(restaurant)
   } catch (error) {
     console.error("Restaurant profile API error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })

@@ -31,14 +31,20 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     // Verify user owns this conversation
-    const conversation = await db.getConversation(id)
-    if (!conversation || conversation.user_id !== userId) {
+    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
+
+    if (!restaurant) {
+      return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
+    }
+
+    const conversation = await db.getConversation(restaurant.id, id)
+    if (!conversation) {
       return NextResponse.json({ success: false, message: "Conversation not found" }, { status: 404 })
     }
 
-    const messages = await db.getMessages(id)
+    const messages = await db.listMessages(restaurant.id, id)
 
-    return NextResponse.json(messages)
+    return NextResponse.json({ success: true, messages })
   } catch (error) {
     console.error("Messages API error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })
@@ -61,23 +67,31 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     // Verify user owns this conversation
-    const conversation = await db.getConversation(id)
-    if (!conversation || conversation.user_id !== userId) {
+    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
+
+    if (!restaurant) {
+      return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
+    }
+
+    const conversation = await db.getConversation(restaurant.id, id)
+    if (!conversation) {
       return NextResponse.json({ success: false, message: "Conversation not found" }, { status: 404 })
     }
 
+    const direction = sender_type === "customer" ? "IN" : "OUT"
+
     const message = await db.createMessage({
-      conversation_id: id,
-      sender_type,
-      content,
-      message_type,
-      template_id,
+      conversationId: id,
+      restaurantId: restaurant.id,
+      direction,
+      body: content,
+      mediaUrl: message_type === "media" ? content : undefined,
     })
 
     // Log usage
-    await db.logUsage(userId, "message_sent", message.id)
+    await db.logUsage(restaurant.id, "message_sent", { messageId: message.id })
 
-    return NextResponse.json(message)
+    return NextResponse.json({ success: true, message })
   } catch (error) {
     console.error("Send message error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })

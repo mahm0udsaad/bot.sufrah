@@ -1,0 +1,147 @@
+"use client"
+
+import { useState } from "react"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Search, MessageCircle, Bot, User } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { formatDistanceToNow } from "date-fns"
+import { ar } from "date-fns/locale"
+
+interface BotConversation {
+  id: string
+  customer_phone: string
+  customer_name: string
+  status: "active" | string
+  last_message_at: string
+  unread_count: number
+  is_bot_active: boolean
+}
+
+interface ConversationListProps {
+  conversations: BotConversation[]
+  selectedId: string | null
+  onSelect: (id: string) => void
+}
+
+export function ConversationList({ conversations, selectedId, onSelect }: ConversationListProps) {
+  const [searchQuery, setSearchQuery] = useState("")
+
+  const filteredConversations = conversations.filter((conv) => {
+    const query = searchQuery.toLowerCase()
+    return (
+      conv.customer_name.toLowerCase().includes(query) ||
+      conv.customer_phone.includes(query)
+    )
+  })
+
+  const formatTimeAgo = (timestamp: string) => {
+    try {
+      return formatDistanceToNow(new Date(timestamp), { addSuffix: true, locale: ar })
+    } catch {
+      return timestamp
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full" dir="rtl">
+      {/* Header */}
+      <div className="p-4 border-b">
+        <div className="flex items-center gap-2 mb-3">
+          <MessageCircle className="h-5 w-5" />
+          <h2 className="font-semibold text-lg">المحادثات</h2>
+          {conversations.length > 0 && (
+            <Badge variant="secondary" className="mr-auto">
+              {conversations.length}
+            </Badge>
+          )}
+        </div>
+        
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            type="text"
+            placeholder="بحث في المحادثات..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pr-10"
+          />
+        </div>
+      </div>
+
+      {/* Conversation List */}
+      <ScrollArea className="flex-1">
+        {filteredConversations.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground">
+            <MessageCircle className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <p>{searchQuery ? "لا توجد محادثات مطابقة" : "لا توجد محادثات"}</p>
+          </div>
+        ) : (
+          <div className="divide-y">
+            {filteredConversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                onClick={() => onSelect(conversation.id)}
+                className={cn(
+                  "w-full p-4 text-right hover:bg-accent transition-colors",
+                  selectedId === conversation.id && "bg-accent"
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  {/* Avatar */}
+                  <div className="flex-shrink-0">
+                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <User className="h-5 w-5 text-primary" />
+                    </div>
+                  </div>
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <h3 className="font-semibold truncate">
+                        {conversation.customer_name || conversation.customer_phone}
+                      </h3>
+                      {conversation.unread_count > 0 && (
+                        <Badge variant="default" className="rounded-full px-2 py-0.5 text-xs">
+                          {conversation.unread_count}
+                        </Badge>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm text-muted-foreground truncate">
+                        {conversation.customer_phone}
+                      </p>
+                      <p className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatTimeAgo(conversation.last_message_at)}
+                      </p>
+                    </div>
+
+                    {/* Status indicators */}
+                    <div className="flex items-center gap-2 mt-2">
+                      <Badge
+                        variant={conversation.status === "active" ? "default" : "secondary"}
+                        className="text-xs"
+                      >
+                        {conversation.status === "active" ? "نشط" : "مغلق"}
+                      </Badge>
+                      {conversation.is_bot_active && (
+                        <Badge variant="outline" className="text-xs gap-1">
+                          <Bot className="h-3 w-3" />
+                          بوت
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  )
+}
+

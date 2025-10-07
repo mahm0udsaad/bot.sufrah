@@ -27,6 +27,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}>
+      <head>
+        <link rel="icon" href="/Gemini_Generated_Image_ipzpxqipzpxqipzp.ico" type="image/x-icon" />
+      </head>
       <body>
         <AuthProvider>{children}</AuthProvider>
       </body>

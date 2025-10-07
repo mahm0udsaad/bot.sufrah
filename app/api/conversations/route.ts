@@ -29,9 +29,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
-    const conversations = await db.getConversations(userId)
+    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
 
-    return NextResponse.json(conversations)
+    if (!restaurant) {
+      return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
+    }
+
+    const takeParam = request.nextUrl.searchParams.get("take")
+    const cursorId = request.nextUrl.searchParams.get("cursor")
+    const take = takeParam ? Math.min(Math.max(parseInt(takeParam, 10) || 0, 1), 100) : 50
+
+    const conversations = await db.listConversations(restaurant.id, take, cursorId ?? undefined)
+
+    return NextResponse.json({ success: true, conversations })
   } catch (error) {
     console.error("Conversations API error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })
@@ -46,19 +56,28 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
+    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
+
+    if (!restaurant) {
+      return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
+    }
+
     const { customer_phone, customer_name } = await request.json()
 
     if (!customer_phone) {
       return NextResponse.json({ success: false, message: "Customer phone is required" }, { status: 400 })
     }
 
+    const customerWa = customer_phone.startsWith("whatsapp:") ? customer_phone : `whatsapp:${customer_phone}`
+
     const conversation = await db.createConversation({
-      user_id: userId,
-      customer_phone,
-      customer_name,
+      restaurantId: restaurant.id,
+      customerWa,
+      lastMessageAt: new Date(),
+      status: "OPEN",
     })
 
-    return NextResponse.json(conversation)
+    return NextResponse.json({ success: true, conversation })
   } catch (error) {
     console.error("Create conversation error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })

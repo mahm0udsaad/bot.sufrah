@@ -1,21 +1,14 @@
-import { neon } from "@neondatabase/serverless"
+import prisma from "./prisma"
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL is not set")
-}
+// Keep compatibility with existing raw SQL usage
+export const sql = prisma.$queryRaw.bind(prisma)
 
-export const sql = neon(process.env.DATABASE_URL)
-
-// Database query helpers
 export const db = {
-  sql, // Export sql for direct queries
+  sql,
 
   // Users
   async getUserByPhone(phone: string) {
-    const [user] = await sql`
-      SELECT * FROM users WHERE phone = ${phone}
-    `
-    return user
+    return prisma.user.findUnique({ where: { phone } })
   },
 
   async createUserWithRestaurant(data: {
@@ -23,30 +16,30 @@ export const db = {
     verification_code?: string
     verification_expires_at?: Date
   }) {
-    // Create user first
-    const [user] = await sql`
-      INSERT INTO users (phone, name, verification_code, verification_expires_at)
-      VALUES (${data.phone}, ${"Restaurant Owner"}, ${data.verification_code || null}, ${data.verification_expires_at || null})
-      RETURNING *
-    `
+    return prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          phone: data.phone,
+          name: "Restaurant Owner",
+          verification_code: data.verification_code ?? null,
+          verification_expires_at: data.verification_expires_at ?? null,
+        },
+      })
 
-    // Create restaurant profile with only existing columns
-    await sql`
-      INSERT INTO restaurant_profiles (
-        user_id, name, description, phone, whatsapp_number, address, is_active
-      )
-      VALUES (
-        ${user.id}, 
-        ${"My Restaurant"}, 
-        ${"A new restaurant ready to serve customers"}, 
-        ${data.phone}, 
-        ${data.phone},
-        ${"123 Main Street"}, 
-        ${true}
-      )
-    `
+      await tx.restaurant.create({
+        data: {
+          userId: user.id,
+          name: "My Restaurant",
+          description: "A new restaurant ready to serve customers",
+          phone: data.phone,
+          whatsappNumber: data.phone,
+          address: "123 Main Street",
+          isActive: true,
+        },
+      })
 
-    return user
+      return user
+    })
   },
 
   async createUser(data: {
@@ -56,12 +49,15 @@ export const db = {
     verification_code?: string
     verification_expires_at?: Date
   }) {
-    const [user] = await sql`
-      INSERT INTO users (phone, name, email, verification_code, verification_expires_at)
-      VALUES (${data.phone}, ${data.name || null}, ${data.email || null}, ${data.verification_code || null}, ${data.verification_expires_at || null})
-      RETURNING *
-    `
-    return user
+    return prisma.user.create({
+      data: {
+        phone: data.phone,
+        name: data.name ?? null,
+        email: data.email ?? null,
+        verification_code: data.verification_code ?? null,
+        verification_expires_at: data.verification_expires_at ?? null,
+      },
+    })
   },
 
   async updateUser(
@@ -74,221 +70,198 @@ export const db = {
       verification_expires_at: Date | null
     }>,
   ) {
-    const updates = Object.entries(data).filter(([_, value]) => value !== undefined)
-
-    if (updates.length === 0) {
-      throw new Error("No valid fields to update")
-    }
-
-    // Build SET clauses dynamically using tagged templates
-    let setClause = ""
-    const values: any[] = []
-
-    updates.forEach(([key, value], index) => {
-      if (index > 0) setClause += ", "
-      setClause += `${key} = $${index + 1}`
-      values.push(value)
+    return prisma.user.update({
+      where: { id },
+      data,
     })
-
-    values.push(id) // Add id as the last parameter
-
-    const query = `UPDATE users SET ${setClause}, updated_at = NOW() WHERE id = $${values.length} RETURNING *`
-
-    const [user] = await sql.query(query, values)
-    return user
   },
 
-  // Conversations
-  async getConversations(userId: string, limit = 50) {
-    return await sql`
-      SELECT c.*, 
-             m.content as last_message,
-             m.sent_at as last_message_at
-      FROM conversations c
-      LEFT JOIN messages m ON m.conversation_id = c.id
-      WHERE c.user_id = ${userId}
-      ORDER BY c.last_message_at DESC
-      LIMIT ${limit}
-    `
+  // Restaurants
+  async getPrimaryRestaurantByUserId(userId: string) {
+    return prisma.restaurant.findFirst({ where: { userId } })
   },
 
-  async getConversation(id: string) {
-    const [conversation] = await sql`
-      SELECT * FROM conversations WHERE id = ${id}
-    `
-    return conversation
+  async getRestaurantById(restaurantId: string) {
+    return prisma.restaurant.findUnique({ where: { id: restaurantId } })
   },
 
-  async createConversation(data: {
-    user_id: string
-    customer_phone: string
-    customer_name?: string
-  }) {
-    const [conversation] = await sql`
-      INSERT INTO conversations (user_id, customer_phone, customer_name, window_expires_at)
-      VALUES (${data.user_id}, ${data.customer_phone}, ${data.customer_name || null}, NOW() + INTERVAL '24 hours')
-      RETURNING *
-    `
-    return conversation
-  },
-
-  // Messages
-  async getMessages(conversationId: string, limit = 100) {
-    return await sql`
-      SELECT * FROM messages 
-      WHERE conversation_id = ${conversationId}
-      ORDER BY sent_at ASC
-      LIMIT ${limit}
-    `
-  },
-
-  async createMessage(data: {
-    conversation_id: string
-    sender_type: "customer" | "bot" | "agent"
-    content: string
-    message_type?: string
-    template_id?: string
-  }) {
-    const [message] = await sql`
-      INSERT INTO messages (conversation_id, sender_type, content, message_type, template_id)
-      VALUES (${data.conversation_id}, ${data.sender_type}, ${data.content}, ${data.message_type || "text"}, ${data.template_id || null})
-      RETURNING *
-    `
-
-    // Update conversation last_message_at
-    await sql`
-      UPDATE conversations 
-      SET last_message_at = NOW()
-      WHERE id = ${data.conversation_id}
-    `
-
-    return message
-  },
-
-  // Templates
-  async getTemplates(userId: string) {
-    return await sql`
-      SELECT * FROM templates 
-      WHERE user_id = ${userId}
-      ORDER BY created_at DESC
-    `
-  },
-
-  async createTemplate(data: {
-    user_id: string
-    name: string
-    category: string
-    body_text: string
-    header_type?: string
-    header_content?: string
-    footer_text?: string
-  }) {
-    const [template] = await sql`
-      INSERT INTO templates (user_id, name, category, body_text, header_type, header_content, footer_text)
-      VALUES (${data.user_id}, ${data.name}, ${data.category}, ${data.body_text}, ${data.header_type || null}, ${data.header_content || null}, ${data.footer_text || null})
-      RETURNING *
-    `
-    return template
-  },
-
-  // Orders
-  async getOrders(userId: string, limit = 50) {
-    return await sql`
-      SELECT o.*, c.customer_name
-      FROM orders o
-      LEFT JOIN conversations c ON c.id = o.conversation_id
-      LEFT JOIN users u ON u.id = c.user_id
-      WHERE u.id = ${userId} OR o.customer_phone IN (
-        SELECT DISTINCT customer_phone FROM conversations WHERE user_id = ${userId}
-      )
-      ORDER BY o.created_at DESC
-      LIMIT ${limit}
-    `
-  },
-
-  async createOrder(data: {
-    conversation_id?: string
-    customer_phone: string
-    customer_name?: string
-    items: any[]
-    total_amount: number
-    delivery_address?: string
-  }) {
-    const [order] = await sql`
-      INSERT INTO orders (conversation_id, customer_phone, customer_name, items, total_amount, delivery_address)
-      VALUES (${data.conversation_id || null}, ${data.customer_phone}, ${data.customer_name || null}, ${JSON.stringify(data.items)}, ${data.total_amount}, ${data.delivery_address || null})
-      RETURNING *
-    `
-    return order
-  },
-
-  // Analytics
-  async getDashboardStats(userId: string) {
-    const [stats] = await sql`
-      SELECT 
-        (SELECT COUNT(*) FROM conversations WHERE user_id = ${userId} AND status = 'active') as active_conversations,
-        (SELECT COUNT(*) FROM orders o LEFT JOIN conversations c ON c.id = o.conversation_id WHERE c.user_id = ${userId} AND o.created_at >= CURRENT_DATE) as todays_orders,
-        (SELECT COUNT(*) FROM messages m LEFT JOIN conversations c ON c.id = m.conversation_id WHERE c.user_id = ${userId} AND m.sent_at >= CURRENT_DATE) as messages_today,
-        (SELECT COUNT(*) FROM templates WHERE user_id = ${userId} AND status = 'approved') as active_templates
-    `
-    return stats
-  },
-
-  // Usage tracking
-  async logUsage(userId: string, actionType: string, resourceId?: string, metadata?: any) {
-    // Get the restaurant_id for this user
-    const restaurantProfile = await this.getRestaurantProfile(userId)
-    const restaurantId = restaurantProfile?.id
-
-    if (!restaurantId) {
-      console.warn(`[v0] No restaurant profile found for user ${userId}, skipping usage log`)
-      return
-    }
-
-    await sql`
-      INSERT INTO usage_logs (restaurant_id, action, details)
-      VALUES (${restaurantId}, ${actionType}, ${JSON.stringify({
-        resource_id: resourceId,
-        user_id: userId,
-        ...metadata,
-      })})
-    `
-  },
-
-  async getRestaurantProfile(userId: string) {
-    const [profile] = await sql`
-      SELECT * FROM restaurant_profiles WHERE user_id = ${userId}
-    `
-    return profile
-  },
-
-  async updateRestaurantProfile(
-    userId: string,
+  async updateRestaurant(
+    restaurantId: string,
     data: Partial<{
       name: string
       description: string
       phone: string
-      whatsapp_number: string
+      whatsappNumber: string | null
       address: string
-      is_active: boolean
+      isActive: boolean
+      externalMerchantId: string | null
     }>,
   ) {
-    const updates = Object.entries(data).filter(([_, value]) => value !== undefined)
-    if (updates.length === 0) {
-      throw new Error("No valid fields to update for restaurant profile")
-    }
+    return prisma.restaurant.update({
+      where: { id: restaurantId },
+      data,
+    })
+  },
 
-    let setClause = ""
-    const values: any[] = []
-    updates.forEach(([key, value], index) => {
-      if (index > 0) setClause += ", "
-      setClause += `${key} = $${index + 1}`
-      values.push(value)
+  // Conversations
+  async listConversations(restaurantId: string, take = 50, cursorId?: string) {
+    return prisma.conversation.findMany({
+      where: { restaurantId },
+      orderBy: [{ lastMessageAt: "desc" }, { id: "desc" }],
+      take,
+      skip: cursorId ? 1 : 0,
+      cursor: cursorId ? { id: cursorId } : undefined,
+    })
+  },
+
+  async getConversation(restaurantId: string, conversationId: string) {
+    return prisma.conversation.findFirst({ where: { id: conversationId, restaurantId } })
+  },
+
+  async createConversation(data: {
+    restaurantId: string
+    customerWa: string
+    lastMessageAt?: Date
+    status?: "OPEN" | "CLOSED"
+  }) {
+    return prisma.conversation.create({
+      data: {
+        restaurantId: data.restaurantId,
+        customerWa: data.customerWa,
+        lastMessageAt: data.lastMessageAt ?? new Date(),
+        status: data.status ?? "OPEN",
+      },
+    })
+  },
+
+  async touchConversation(conversationId: string) {
+    return prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: new Date() },
+    })
+  },
+
+  async closeConversation(conversationId: string) {
+    return prisma.conversation.update({
+      where: { id: conversationId },
+      data: { status: "CLOSED" },
+    })
+  },
+
+  // Messages
+  async listMessages(restaurantId: string, conversationId: string, take = 100) {
+    return prisma.message.findMany({
+      where: { restaurantId, conversationId },
+      orderBy: { createdAt: "asc" },
+      take,
+    })
+  },
+
+  async createMessage(data: {
+    restaurantId: string
+    conversationId: string
+    direction: "IN" | "OUT"
+    body: string
+    waSid?: string
+    mediaUrl?: string
+  }) {
+    const message = await prisma.message.create({
+      data: {
+        restaurantId: data.restaurantId,
+        conversationId: data.conversationId,
+        direction: data.direction,
+        body: data.body,
+        waSid: data.waSid ?? null,
+        mediaUrl: data.mediaUrl ?? null,
+      },
     })
 
-    values.push(userId)
-    const query = `UPDATE restaurant_profiles SET ${setClause}, updated_at = NOW() WHERE user_id = $${values.length} RETURNING *`
-    const [profile] = await sql.query(query, values)
-    return profile
+    await prisma.conversation.update({
+      where: { id: data.conversationId },
+      data: { lastMessageAt: new Date() },
+    })
+
+    return message
+  },
+
+  // Orders
+  async listOrders(restaurantId: string, take = 50) {
+    return prisma.order.findMany({
+      where: { restaurantId },
+      orderBy: { createdAt: "desc" },
+      take,
+      include: {
+        items: true,
+      },
+    })
+  },
+
+  async getOrder(restaurantId: string, orderId: string) {
+    return prisma.order.findFirst({
+      where: { id: orderId, restaurantId },
+      include: { items: true },
+    })
+  },
+
+  async createOrder(data: {
+    restaurantId: string
+    conversationId?: string | null
+    status?: OrderStatus
+    totalCents?: number
+    currency?: string
+    meta?: Record<string, unknown>
+    items?: Array<{ name: string; qty: number; unitCents: number; totalCents: number }>
+  }) {
+    return prisma.order.create({
+      data: {
+        restaurantId: data.restaurantId,
+        conversationId: data.conversationId ?? null,
+        status: data.status ?? "DRAFT",
+        totalCents: data.totalCents ?? 0,
+        currency: data.currency ?? "SAR",
+        meta: data.meta ?? null,
+        items: data.items
+          ? {
+              create: data.items.map((item) => ({
+                name: item.name,
+                qty: item.qty,
+                unitCents: item.unitCents,
+                totalCents: item.totalCents,
+              })),
+            }
+          : undefined,
+      },
+      include: { items: true },
+    })
+  },
+
+  async updateOrder(
+    restaurantId: string,
+    orderId: string,
+    data: Partial<{
+      status: OrderStatus
+      totalCents: number
+      currency: string
+      meta: Record<string, unknown> | null
+    }>,
+  ) {
+    return prisma.order.update({
+      where: { id: orderId, restaurantId },
+      data,
+      include: { items: true },
+    })
+  },
+
+  // Usage tracking
+  async logUsage(restaurantId: string, actionType: string, metadata?: Record<string, unknown>) {
+    return prisma.usageLog.create({
+      data: {
+        restaurantId,
+        action: actionType,
+        details: metadata ?? {},
+      },
+    })
   },
 }
+
+export type OrderStatus = "DRAFT" | "CONFIRMED" | "PREPARING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "CANCELLED"

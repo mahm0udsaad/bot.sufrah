@@ -10,18 +10,13 @@ interface User {
   is_verified: boolean
   restaurant?: {
     id: string
-    business_name: string
-    business_type: string
-    phone_number: string
+    name: string
+    description?: string
+    phone?: string
     whatsapp_number?: string
     address?: string
-    city?: string
-    country?: string
-    cuisine_type?: string
-    operating_hours?: any
-    delivery_zones?: any
-    payment_methods?: any
     is_active: boolean
+    external_merchant_id?: string
   }
 }
 

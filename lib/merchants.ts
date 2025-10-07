@@ -33,7 +33,10 @@ function joinUrl(base: string, path: string): string {
   return hasSlash ? `${base}${trimmedPath}` : `${base}/${trimmedPath}`
 }
 
-export async function fetchMerchantByPhoneOrEmail(emailOrPhone: string): Promise<{ success: boolean; data?: MerchantData; error?: string }>{
+export async function fetchMerchantByPhoneOrEmail(
+  emailOrPhone: string,
+  options?: { preserveEncoding?: boolean }
+): Promise<{ success: boolean; data?: MerchantData; error?: string }>{
   const baseUrl = process.env.BASEURL || ""
   const apiToken = process.env.APITOKEN || ""
 
@@ -42,20 +45,26 @@ export async function fetchMerchantByPhoneOrEmail(emailOrPhone: string): Promise
   }
 
   const url = new URL(joinUrl(baseUrl, "/api/v1/external/merchants/get-by-property"))
-  url.searchParams.set("EmailOrPhone", emailOrPhone)
+
+  if (options?.preserveEncoding) {
+    url.search = `EmailOrPhone=${emailOrPhone}`
+  } else {
+    url.searchParams.set("EmailOrPhone", emailOrPhone)
+  }
   
   try {
     const res = await fetch(url.toString(), {
       method: "GET",
       headers: {
         Accept: "text/plain",
-        Authorization: "ApiToken MVP4L8AhFnS3S1LGcg6QqkZ8yPEcgaWetBnGOKu6dCE=",
+        Authorization: `ApiToken ${apiToken}`,
       },
       // Keep Node.js runtime; avoid revalidation caching for verification flow
       cache: "no-store",
     })
 
     if (!res.ok) {
+      console.log("[v0] External API error:", res) // Add debug logging
       return { success: false, error: `External API error ${res.status}` }
     }
 
@@ -78,5 +87,4 @@ export async function fetchMerchantByPhoneOrEmail(emailOrPhone: string): Promise
     return { success: false, error: (error as Error).message }
   }
 }
-
 

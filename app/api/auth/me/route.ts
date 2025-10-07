@@ -24,8 +24,7 @@ export async function GET(request: NextRequest) {
         })
         console.log("[v0] New user created:", newUser.id)
 
-        // Get the restaurant profile for the new user
-        const restaurant = await db.getRestaurantProfile(newUser.id)
+        const restaurant = await db.getPrimaryRestaurantByUserId(newUser.id)
 
         return NextResponse.json({
           id: newUser.id,
@@ -41,8 +40,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get restaurant profile
-    const restaurant = await db.getRestaurantProfile(user.id)
+    const restaurant = await db.getPrimaryRestaurantByUserId(user.id)
 
     return NextResponse.json({
       id: user.id,

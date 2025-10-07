@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { jwtVerify } from "jose"
-import { db } from "@/lib/db"
+import prisma from "@/lib/prisma"
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
 
@@ -30,20 +30,29 @@ export async function GET(request: NextRequest) {
     }
 
     // Get template usage analytics
-    const templateUsage = await db.sql`
-      SELECT 
-        t.name,
-        t.category,
-        t.usage_count as usage
-      FROM templates t
-      WHERE t.user_id = ${userId}
-        AND t.status = 'approved'
-        AND t.usage_count > 0
-      ORDER BY t.usage_count DESC
-      LIMIT 10
-    `
+    const templateUsage = await prisma.template.findMany({
+      where: {
+        user_id: userId,
+        status: "approved",
+        usage_count: { gt: 0 },
+      },
+      select: {
+        name: true,
+        category: true,
+        usage_count: true,
+      },
+      orderBy: { usage_count: "desc" },
+      take: 10,
+    })
 
-    return NextResponse.json(templateUsage)
+    // Match previous shape (usage instead of usage_count)
+    return NextResponse.json(
+      templateUsage.map((t: { name: string; category: string; usage_count: number | null }) => ({
+        name: t.name,
+        category: t.category,
+        usage: t.usage_count ?? 0,
+      }))
+    )
   } catch (error) {
     console.error("Dashboard templates API error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })

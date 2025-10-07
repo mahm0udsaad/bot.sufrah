@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { jwtVerify } from "jose"
-import { db } from "@/lib/db"
+import prisma from "@/lib/prisma"
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
 
@@ -31,18 +31,14 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     }
 
     // Verify template belongs to user
-    const [template] = await db.sql`
-      SELECT * FROM templates WHERE id = ${id} AND user_id = ${userId}
-    `
+    const template = await prisma.template.findFirst({ where: { id, user_id: userId } })
 
     if (!template) {
       return NextResponse.json({ success: false, message: "Template not found" }, { status: 404 })
     }
 
     // Delete template
-    await db.sql`
-      DELETE FROM templates WHERE id = ${id} AND user_id = ${userId}
-    `
+    await prisma.template.delete({ where: { id } })
 
     return NextResponse.json({ success: true, message: "Template deleted successfully" })
   } catch (error) {

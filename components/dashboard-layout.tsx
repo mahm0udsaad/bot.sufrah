@@ -2,21 +2,24 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import { usePathname } from "next/navigation"
 import { Bell, Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { SignOutButton } from "@/components/sign-out-button"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/lib/auth"
 
-const navigation = [
-  { name: "Dashboard", href: "/", icon: BarChart3, current: true },
-  { name: "Chats", href: "/chats", icon: MessageSquare, current: false, badge: "12" },
-  { name: "Orders", href: "/orders", icon: Package, current: false },
-  { name: "Usage & Plan", href: "/usage", icon: BarChart3, current: false },
-  { name: "Templates", href: "/templates", icon: FileText, current: false },
-  { name: "Settings", href: "/settings", icon: Settings, current: false },
+const NAV_ITEMS = [
+  { name: "Dashboard", href: "/", icon: BarChart3 },
+  { name: "Chats", href: "/chats", icon: MessageSquare },
+  { name: "Orders", href: "/orders", icon: Package },
+  { name: "Catalog", href: "/catalog", icon: Store },
+  { name: "Usage & Plan", href: "/usage", icon: BarChart3 },
+  { name: "Templates", href: "/templates", icon: FileText },
+  { name: "Settings", href: "/settings", icon: Settings },
 ]
 
 interface DashboardLayoutProps {
@@ -25,6 +28,21 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const { user } = useAuth()
+  const restaurantName = user?.restaurant?.name || "Sufrah Bot"
+  const pathname = usePathname()
+
+  const navigation = useMemo(
+    () =>
+      NAV_ITEMS.map((item) => {
+        const isActive =
+          pathname === item.href ||
+          (item.href !== "/" && pathname?.startsWith(`${item.href}/`)) ||
+          (item.href === "/" && pathname === item.href)
+        return { ...item, isActive }
+      }),
+    [pathname],
+  )
 
   return (
     <div className="min-h-screen bg-background">
@@ -38,7 +56,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
                   <span className="text-primary-foreground font-bold text-sm">S</span>
                 </div>
-                <span className="font-semibold text-sidebar-foreground">Sufrah Bot</span>
+                <span className="font-semibold text-sidebar-foreground">{restaurantName}</span>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setSidebarOpen(false)}>
                 <X className="h-4 w-4" />
@@ -51,18 +69,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   href={item.href}
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors mb-1",
-                    item.current
+                    item.isActive
                       ? "bg-sidebar-primary text-sidebar-primary-foreground"
                       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   )}
                 >
                   <item.icon className="h-4 w-4" />
                   {item.name}
-                  {item.badge && (
-                    <Badge variant="secondary" className="ml-auto">
-                      {item.badge}
-                    </Badge>
-                  )}
                 </a>
               ))}
             </nav>
@@ -76,11 +89,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Desktop sidebar */}
       <div className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-64 lg:flex-col">
         <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-sidebar border-r border-sidebar-border px-6 py-4">
-          <div className="flex h-16 shrink-0 items-center gap-2">
+            <div className="flex h-16 shrink-0 items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
               <span className="text-primary-foreground font-bold text-sm">S</span>
             </div>
-            <span className="font-semibold text-sidebar-foreground">Sufrah Bot</span>
+              <span className="font-semibold text-sidebar-foreground">{restaurantName}</span>
           </div>
           <nav className="flex flex-1 flex-col">
             <ul role="list" className="flex flex-1 flex-col gap-y-1">
@@ -90,18 +103,13 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     href={item.href}
                     className={cn(
                       "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                      item.current
+                      item.isActive
                         ? "bg-sidebar-primary text-sidebar-primary-foreground"
                         : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                     )}
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
                     {item.name}
-                    {item.badge && (
-                      <Badge variant="secondary" className="ml-auto">
-                        {item.badge}
-                      </Badge>
-                    )}
                   </a>
                 </li>
               ))}
@@ -126,8 +134,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               <div className="flex items-center gap-x-2">
                 <Store className="h-4 w-4 text-muted-foreground" />
                 <select className="bg-transparent text-sm font-medium text-foreground border-none outline-none">
-                  <option>Main Restaurant</option>
-                  <option>Branch 2</option>
+                  <option>{restaurantName}</option>
                 </select>
               </div>
             </div>

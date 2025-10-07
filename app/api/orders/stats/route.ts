@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { jwtVerify } from "jose"
+import prisma from "@/lib/prisma"
 import { db } from "@/lib/db"
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
@@ -29,29 +30,46 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
-    // Get order statistics
-    const [stats] = await db.sql`
-      WITH user_orders AS (
-        SELECT o.*
-        FROM orders o
-        LEFT JOIN conversations c ON c.id = o.conversation_id
-        WHERE c.user_id = ${userId} OR o.customer_phone IN (
-          SELECT DISTINCT customer_phone FROM conversations WHERE user_id = ${userId}
-        )
-      )
-      SELECT 
-        (SELECT COUNT(*) FROM user_orders WHERE DATE(created_at) = CURRENT_DATE) as todays_orders,
-        (SELECT COALESCE(SUM(total_amount), 0) FROM user_orders WHERE DATE(created_at) = CURRENT_DATE) as total_revenue,
-        (SELECT COALESCE(AVG(total_amount), 0) FROM user_orders WHERE DATE(created_at) = CURRENT_DATE) as avg_order_value,
-        (SELECT 
-          CASE 
-            WHEN COUNT(*) = 0 THEN 0
-            ELSE ROUND((COUNT(*) FILTER (WHERE status = 'delivered') * 100.0 / COUNT(*)), 1)
-          END
-        FROM user_orders WHERE DATE(created_at) = CURRENT_DATE) as completion_rate
-    `
+    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
 
-    return NextResponse.json(stats)
+    if (!restaurant) {
+      return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
+    }
+
+    const startOfDay = new Date()
+    startOfDay.setHours(0, 0, 0, 0)
+
+    const [todaysOrders, revenueAgg, completionData] = await Promise.all([
+      prisma.order.count({ where: { restaurantId: restaurant.id, createdAt: { gte: startOfDay } } }),
+      prisma.order.aggregate({
+        where: { restaurantId: restaurant.id, createdAt: { gte: startOfDay } },
+        _sum: { totalCents: true },
+        _avg: { totalCents: true },
+      }),
+      prisma.order.groupBy({
+        where: { restaurantId: restaurant.id, createdAt: { gte: startOfDay } },
+        by: ["status"],
+        _count: { status: true },
+      }),
+    ])
+
+    const totalRevenue = (revenueAgg._sum.totalCents ?? 0) / 100
+    const avgOrderValue = (revenueAgg._avg.totalCents ?? 0) / 100
+
+    const totalCount = completionData.reduce((sum, row) => sum + row._count.status, 0)
+    const deliveredCount = completionData
+      .filter((row) => row.status === "DELIVERED")
+      .reduce((sum, row) => sum + row._count.status, 0)
+    const completionRate = totalCount === 0 ? 0 : Number(((deliveredCount * 100) / totalCount).toFixed(1))
+
+    const stats = {
+      todays_orders: todaysOrders,
+      total_revenue: totalRevenue,
+      avg_order_value: avgOrderValue,
+      completion_rate: completionRate,
+    }
+
+    return NextResponse.json({ success: true, stats })
   } catch (error) {
     console.error("Order stats API error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })

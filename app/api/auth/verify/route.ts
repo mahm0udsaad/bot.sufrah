@@ -16,6 +16,11 @@ export async function POST(request: NextRequest) {
     const formattedPhone = formatPhoneNumber(phone)
     console.log("[v0] Formatted phone for verification:", formattedPhone) // Add debug logging
 
+    const submittedWithPlus = typeof phone === "string" && phone.trim().startsWith("+")
+    const merchantLookupPhone = submittedWithPlus ? formattedPhone : `%2B${formattedPhone.slice(1)}`
+    const merchantLookupOptions = submittedWithPlus ? undefined : { preserveEncoding: true }
+    console.log("[v0] Merchant lookup value:", merchantLookupPhone) // Add debug logging
+
     const user = await db.getUserByPhone(formattedPhone)
     console.log("[v0] User found for verification:", !!user) // Add debug logging
 
@@ -46,27 +51,40 @@ export async function POST(request: NextRequest) {
       verification_expires_at: null,
     })
 
-    // Fetch merchant data by phone and update restaurant profile (best-effort)
+    const restaurant = await db.getPrimaryRestaurantByUserId(user.id)
+
+    // Fetch merchant data by phone and update user + restaurant profile (best-effort)
     try {
-      const merchantRes = await fetchMerchantByPhoneOrEmail(formattedPhone)
+      const merchantRes = await fetchMerchantByPhoneOrEmail(merchantLookupPhone, merchantLookupOptions)
       console.log("[v0] Merchant response:", merchantRes) // Add debug logging
       if (merchantRes.success && merchantRes.data) {
         const m = merchantRes.data
-        await db.updateRestaurantProfile(user.id, {
-          name: m.name || undefined,
-          description: m.bundleName || undefined,
-          phone: m.phoneNumber || undefined,
-          whatsapp_number: m.phoneNumber || undefined,
-          address: m.address || undefined,
-          is_active: typeof m.isActive === "boolean" ? m.isActive : undefined,
+        // Update user basic info if available
+        await db.updateUser(user.id, {
+          name: typeof m.name === "string" ? m.name : undefined,
+          email: typeof m.email === "string" ? m.email : undefined,
         })
+        console.log("[v0] User updated:", merchantRes) // Add debug logging
+        if (restaurant) {
+          await db.updateRestaurant(restaurant.id, {
+            name: m.name || undefined,
+            description: m.bundleName || undefined,
+            phone: m.phoneNumber || undefined,
+            whatsappNumber: m.phoneNumber || undefined,
+            address: m.address || undefined,
+            isActive: typeof m.isActive === "boolean" ? m.isActive : undefined,
+            externalMerchantId: typeof m.id === "string" ? m.id : undefined,
+          })
+        }
       }
     } catch (syncErr) {
       console.warn("[verify] Failed syncing merchant data:", syncErr)
     }
 
     // Log usage
-    await db.logUsage(user.id, "user_signin")
+    if (restaurant) {
+      await db.logUsage(restaurant.id, "user_signin")
+    }
 
     const response = NextResponse.json({
       success: true,

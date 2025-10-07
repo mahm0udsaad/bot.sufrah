@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,9 +11,113 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import { Store, MessageSquare, Bell, Shield, Users } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Store, MessageSquare, Bell, Shield, Users, Loader2 } from "lucide-react"
+import Link from "next/link"
+
+type RestaurantBotState = {
+  id: string
+  restaurantId: string
+  subaccountSid: string
+  authToken: string
+  whatsappNumber: string | null
+  senderSid: string | null
+  verificationSid: string | null
+  status: string
+  verifiedAt: string | null
+  errorMessage: string | null
+  createdAt: string
+}
 
 export default function SettingsPage() {
+  const [restaurantId, setRestaurantId] = useState<string | null>(null)
+  const [bot, setBot] = useState<RestaurantBotState | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadInitialState = async () => {
+      setIsLoading(true)
+      setError(null)
+
+      try {
+        const profileRes = await fetch("/api/restaurant/profile", { cache: "no-store" })
+
+        if (!profileRes.ok) {
+          throw new Error("Failed to load restaurant profile")
+        }
+
+        const profile = await profileRes.json()
+        if (cancelled) {
+          return
+        }
+
+        setRestaurantId(profile.id)
+
+        const botRes = await fetch(`/api/onboarding/whatsapp?restaurantId=${profile.id}`, { cache: "no-store" })
+
+        if (!botRes.ok) {
+          throw new Error("Failed to load WhatsApp bot status")
+        }
+
+        const botPayload = await botRes.json()
+
+        if (!cancelled) {
+          setBot(botPayload.bot ?? null)
+        }
+      } catch (err) {
+        console.error("Failed to load WhatsApp onboarding state", err)
+
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unable to load WhatsApp onboarding state")
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    void loadInitialState()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const renderStatusBadge = () => {
+    if (isLoading) {
+      return (
+        <Badge variant="outline" className="border-muted-foreground/30 text-muted-foreground">
+          Checking…
+        </Badge>
+      )
+    }
+
+    if (!bot) {
+      return (
+        <Badge variant="outline" className="bg-yellow-50 border-yellow-200 text-yellow-700">
+          Not Connected
+        </Badge>
+      )
+    }
+
+    const status = typeof bot.status === "string" ? bot.status.toUpperCase() : "PENDING"
+
+    switch (status) {
+      case "ACTIVE":
+        return <Badge variant="outline" className="bg-emerald-50 border-emerald-200 text-emerald-700">Active</Badge>
+      case "VERIFYING":
+        return <Badge variant="outline" className="bg-sky-50 border-sky-200 text-sky-700">Verifying</Badge>
+      case "FAILED":
+        return <Badge variant="outline" className="bg-red-50 border-red-200 text-red-600">Failed</Badge>
+      default:
+        return <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-600">Pending</Badge>
+    }
+  }
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -98,20 +203,63 @@ export default function SettingsPage() {
                 WhatsApp Settings
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="whatsapp-number">WhatsApp Business Number</Label>
-                <Input id="whatsapp-number" defaultValue="+971 50 123 4567" />
-                <Badge variant="outline" className="mt-2 text-green-600 border-green-200">
-                  <div className="h-2 w-2 bg-green-500 rounded-full mr-2" />
-                  Connected
-                </Badge>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">WhatsApp Bot Status</p>
+                    <p className="text-xs text-muted-foreground">Provisioned through Twilio subaccounts</p>
+                  </div>
+                  {renderStatusBadge()}
+                </div>
+
+                {error ? (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                    {error}
+                  </div>
+                ) : null}
+
+                {isLoading ? (
+                  <Skeleton className="h-28 w-full" />
+                ) : bot ? (
+                  <div className="space-y-3 rounded-lg border border-muted bg-muted/40 px-4 py-3">
+                    <div className="grid gap-1 text-sm text-muted-foreground">
+                      <span>
+                        <span className="font-medium text-foreground">WhatsApp number:</span> {bot.whatsappNumber || "—"}
+                      </span>
+                      <span>
+                        <span className="font-medium text-foreground">Sender SID:</span> {bot.senderSid || "—"}
+                      </span>
+                      <span>
+                        <span className="font-medium text-foreground">Subaccount SID:</span> {bot.subaccountSid}
+                      </span>
+                      {bot.verifiedAt ? (
+                        <span>
+                          <span className="font-medium text-foreground">Verified:</span> {new Date(bot.verifiedAt).toLocaleString()}
+                        </span>
+                      ) : null}
+                      {bot.errorMessage ? (
+                        <span className="text-red-600">Last error: {bot.errorMessage}</span>
+                      ) : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <Link href="/onboarding" className="inline-flex items-center gap-2 text-primary hover:underline">
+                        Update WhatsApp bot setup
+                      </Link>
+                      <span>Re-run the onboarding flow to register a new number or complete OTP verification.</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3 text-sm text-muted-foreground">
+                    <p>No WhatsApp bot is configured yet.</p>
+                    <Link href="/onboarding" className="inline-flex items-center gap-2 text-primary hover:underline">
+                      Go to WhatsApp onboarding
+                    </Link>
+                  </div>
+                )}
               </div>
 
-              <div>
-                <Label htmlFor="business-name">Business Display Name</Label>
-                <Input id="business-name" defaultValue="Sufrah Restaurant" />
-              </div>
+              <Separator />
 
               <div className="space-y-3">
                 <Label>Auto-Reply Settings</Label>

@@ -1,394 +1,407 @@
 "use client"
 
-import { createContext, useContext, useReducer, useEffect, useRef, type ReactNode } from "react"
-import { botApi, type Conversation, type Message, type BotStatus } from "@/lib/bot-api"
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
+import { useRealtime } from "@/contexts/realtime-context"
+import { toast } from "sonner"
+
+interface Conversation {
+  id: string
+  customerWa: string
+  customerName?: string | null
+  status: "OPEN" | "CLOSED"
+  lastMessageAt: string
+  unreadCount: number
+}
+
+interface ChatMessage {
+  id: string
+  conversationId: string
+  direction: "IN" | "OUT"
+  body: string
+  mediaUrl?: string | null
+  createdAt: string
+}
+
+interface BotStatusState {
+  enabled: boolean
+  lastSyncedAt?: string
+}
 
 interface ChatState {
+  restaurantId: string | null
   conversations: Conversation[]
-  messages: Record<string, Message[]>
+  messages: Record<string, ChatMessage[]>
   selectedConversationId: string | null
-  botStatus: BotStatus
-  loading: {
-    conversations: boolean
-    messages: boolean
-    sendingMessage: boolean
-    botToggle: boolean
-  }
-  connected: boolean
+  botStatus: BotStatusState
+  isLoadingConversations: boolean
+  isLoadingMessages: boolean
+  isSendingMessage: boolean
   error: string | null
 }
 
 type ChatAction =
-  | { type: "SET_LOADING"; payload: { key: keyof ChatState["loading"]; value: boolean } }
+  | { type: "SET_RESTAURANT"; payload: string }
   | { type: "SET_CONVERSATIONS"; payload: Conversation[] }
-  | { type: "SET_MESSAGES"; payload: { conversationId: string; messages: Message[] } }
-  | { type: "ADD_MESSAGE"; payload: { conversationId: string; message: Message } }
-  | { type: "UPDATE_CONVERSATION"; payload: Conversation }
-  | { type: "SET_SELECTED_CONVERSATION"; payload: string | null }
-  | { type: "SET_BOT_STATUS"; payload: BotStatus }
-  | { type: "SET_CONNECTED"; payload: boolean }
+  | { type: "UPSERT_CONVERSATION"; payload: Conversation }
+  | { type: "SET_MESSAGES"; payload: { conversationId: string; messages: ChatMessage[] } }
+  | { type: "ADD_MESSAGE"; payload: ChatMessage }
+  | { type: "SET_SELECTED"; payload: string | null }
+  | { type: "SET_BOT_STATUS"; payload: BotStatusState }
+  | { type: "SET_LOADING_CONVERSATIONS"; payload: boolean }
+  | { type: "SET_LOADING_MESSAGES"; payload: boolean }
+  | { type: "SET_SENDING"; payload: boolean }
   | { type: "SET_ERROR"; payload: string | null }
-  | { type: "ADD_OPTIMISTIC_MESSAGE"; payload: { conversationId: string; message: Message } }
-  | { type: "REMOVE_OPTIMISTIC_MESSAGE"; payload: { conversationId: string; messageId: string } }
-  | { type: "REPLACE_OPTIMISTIC_MESSAGE"; payload: { conversationId: string; tempId: string; message: Message } }
 
 const initialState: ChatState = {
+  restaurantId: null,
   conversations: [],
   messages: {},
   selectedConversationId: null,
-  botStatus: { enabled: true },
-  loading: {
-    conversations: false,
-    messages: false,
-    sendingMessage: false,
-    botToggle: false,
-  },
-  connected: false,
+  botStatus: { enabled: false },
+  isLoadingConversations: false,
+  isLoadingMessages: false,
+  isSendingMessage: false,
   error: null,
 }
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
-    case "SET_LOADING":
-      return {
-        ...state,
-        loading: { ...state.loading, [action.payload.key]: action.payload.value },
-      }
-
+    case "SET_RESTAURANT":
+      return { ...state, restaurantId: action.payload }
     case "SET_CONVERSATIONS":
       return { ...state, conversations: action.payload }
-
-    case "SET_MESSAGES":
-      return {
-        ...state,
-        messages: { ...state.messages, [action.payload.conversationId]: action.payload.messages },
+    case "UPSERT_CONVERSATION": {
+      const existingIndex = state.conversations.findIndex((conv) => conv.id === action.payload.id)
+      const updated = [...state.conversations]
+      if (existingIndex >= 0) {
+        updated[existingIndex] = action.payload
+      } else {
+        updated.unshift(action.payload)
       }
-
-    case "ADD_MESSAGE": {
-      const { conversationId, message } = action.payload;
-      const messageKey = message.id || `${message.timestamp}-${message.content}`;
-      const existingMessages = state.messages[conversationId] || [];
-      const messageExists = existingMessages.some((msg) => {
-        const existingKey = msg.id || `${msg.timestamp}-${msg.content}`;
-        return existingKey === messageKey;
-      });
-      const updatedMessages = messageExists
-        ? existingMessages.map((msg) => {
-            const existingKey = msg.id || `${msg.timestamp}-${msg.content}`;
-            return existingKey === messageKey ? message : msg;
-          })
-        : [...existingMessages, message];
-
-      const unreadShouldIncrement = message.is_from_customer && !messageExists;
-
-      const updatedConversations = state.conversations.map((conv) =>
-        conv.id === conversationId
-          ? {
-              ...conv,
-              last_message_at: message.timestamp,
-              unread_count: unreadShouldIncrement ? conv.unread_count + 1 : conv.unread_count,
-            }
-          : conv,
-      );
-
-      updatedConversations.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
-
+      updated.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
+      return { ...state, conversations: updated }
+    }
+    case "SET_MESSAGES":
       return {
         ...state,
         messages: {
           ...state.messages,
-          [conversationId]: updatedMessages,
+          [action.payload.conversationId]: action.payload.messages,
         },
-        conversations: updatedConversations,
-      };
-    }
+      }
+    case "ADD_MESSAGE": {
+      const messages = state.messages[action.payload.conversationId] ?? []
+      const exists = messages.some((msg) => msg.id === action.payload.id)
+      const nextMessages = exists ? messages : [...messages, action.payload]
+      nextMessages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
-    case "UPDATE_CONVERSATION": {
-      const exists = state.conversations.some((conv) => conv.id === action.payload.id);
-      const updatedConversations = exists
-        ? state.conversations.map((conv) => (conv.id === action.payload.id ? action.payload : conv))
-        : [action.payload, ...state.conversations];
+      const updatedConversations = state.conversations.map((conv) =>
+        conv.id === action.payload.conversationId
+          ? {
+              ...conv,
+              lastMessageAt: action.payload.createdAt,
+              unreadCount:
+                state.selectedConversationId === conv.id || action.payload.direction === "OUT"
+                  ? conv.unreadCount
+                  : conv.unreadCount + 1,
+            }
+          : conv,
+      )
 
-      updatedConversations.sort((a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
+      updatedConversations.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
 
       return {
         ...state,
         conversations: updatedConversations,
-      };
+        messages: {
+          ...state.messages,
+          [action.payload.conversationId]: nextMessages,
+        },
+      }
     }
-
-    case "SET_SELECTED_CONVERSATION":
+    case "SET_SELECTED":
       return {
         ...state,
         selectedConversationId: action.payload,
         conversations: state.conversations.map((conv) =>
-          conv.id === action.payload
-            ? { ...conv, unread_count: 0 }
-            : conv
+          conv.id === action.payload ? { ...conv, unreadCount: 0 } : conv,
         ),
-      };
-
+      }
     case "SET_BOT_STATUS":
       return { ...state, botStatus: action.payload }
-
-    case "SET_CONNECTED":
-      return { ...state, connected: action.payload }
-
+    case "SET_LOADING_CONVERSATIONS":
+      return { ...state, isLoadingConversations: action.payload }
+    case "SET_LOADING_MESSAGES":
+      return { ...state, isLoadingMessages: action.payload }
+    case "SET_SENDING":
+      return { ...state, isSendingMessage: action.payload }
     case "SET_ERROR":
       return { ...state, error: action.payload }
-
-    case "ADD_OPTIMISTIC_MESSAGE":
-      return {
-        ...state,
-        messages: {
-          ...state.messages,
-          [action.payload.conversationId]: [
-            ...(state.messages[action.payload.conversationId] || []),
-            action.payload.message,
-          ],
-        },
-      }
-
-    case "REMOVE_OPTIMISTIC_MESSAGE":
-      return {
-        ...state,
-        messages: {
-          ...state.messages,
-          [action.payload.conversationId]: (state.messages[action.payload.conversationId] || []).filter(
-            (msg) => msg.id !== action.payload.messageId,
-          ),
-        },
-      }
-
-    case "REPLACE_OPTIMISTIC_MESSAGE":
-      return {
-        ...state,
-        messages: {
-          ...state.messages,
-          [action.payload.conversationId]: (state.messages[action.payload.conversationId] || []).map((msg) =>
-            msg.id === action.payload.tempId ? action.payload.message : msg,
-          ),
-        },
-      }
-
     default:
       return state
   }
 }
 
-interface ChatContextType extends ChatState {
-  selectConversation: (id: string) => void
-  sendMessage: (content: string) => Promise<void>
-  toggleBot: (enabled: boolean) => Promise<void>
-  refetchConversations: () => Promise<void>
+interface ChatContextValue extends ChatState {
+  selectConversation: (id: string | null) => void
+  refreshConversations: () => Promise<void>
+  loadMessages: (conversationId: string) => Promise<void>
+  sendMessage: (text: string) => Promise<void>
 }
 
-const ChatContext = createContext<ChatContextType | null>(null)
+const ChatContext = createContext<ChatContextValue | null>(null)
+
+function normalizeConversation(data: any): Conversation {
+  const customerWa: string = data.customerWa || data.customer_wa || data.customerPhone || data.customer_phone || ""
+  const lastMessageAt: string = data.lastMessageAt || data.last_message_at || new Date().toISOString()
+  const status: "OPEN" | "CLOSED" = (data.status || "OPEN").toUpperCase() === "CLOSED" ? "CLOSED" : "OPEN"
+  const unreadCount: number = typeof data.unreadCount === "number" ? data.unreadCount : data.unread_count ?? 0
+  return {
+    id: data.id,
+    customerWa,
+    customerName: data.customerName || data.customer_name || null,
+    status,
+    lastMessageAt,
+    unreadCount,
+  }
+}
+
+function normalizeMessage(data: any): ChatMessage {
+  const rawDirection = (data.direction || data.sender_type || "OUT").toString().toUpperCase()
+  const direction: "IN" | "OUT" = rawDirection === "IN" || rawDirection === "CUSTOMER" ? "IN" : "OUT"
+
+  return {
+    id: data.id,
+    conversationId: data.conversationId || data.conversation_id,
+    direction,
+    body: data.body || data.content || "",
+    mediaUrl: data.mediaUrl || data.media_url || null,
+    createdAt: data.createdAt || data.created_at || new Date().toISOString(),
+  }
+}
 
 export function ChatProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(chatReducer, initialState)
-  const wsRef = useRef<WebSocket | null>(null)
-  const lastMessageRef = useRef<string | null>(null)
+  const { restaurantId: realtimeRestaurantId, subscribeToMessages } = useRealtime()
+  const isInitialisedRef = useRef(false)
 
-  useEffect(() => {
-    const fallbackConversations = [
-      {
-        id: "conv-1",
-        customer_phone: "+201234567890",
-        customer_name: "Ahmed Hassan",
-        status: "active" as const,
-        last_message_at: new Date().toISOString(),
-        unread_count: 2,
-        is_bot_active: true,
-      },
-      {
-        id: "conv-2",
-        customer_phone: "+201987654321",
-        customer_name: "Sara Mohamed",
-        status: "active" as const,
-        last_message_at: new Date(Date.now() - 3600000).toISOString(),
-        unread_count: 0,
-        is_bot_active: true,
-      },
-    ]
-    dispatch({ type: "SET_CONVERSATIONS", payload: fallbackConversations })
-
-    // Fetch real data in background
-    fetchConversations()
+  const fetchRestaurant = useCallback(async () => {
+    const res = await fetch("/api/restaurant/profile", { cache: "no-store" })
+    if (!res.ok) {
+      throw new Error("Failed to load restaurant profile")
+    }
+    const restaurant = await res.json()
+    dispatch({ type: "SET_RESTAURANT", payload: restaurant.id })
+    return restaurant.id as string
   }, [])
 
-  const fetchConversations = async () => {
+  const loadBotStatus = useCallback(async (restaurantId: string) => {
     try {
-      dispatch({ type: "SET_ERROR", payload: null })
-      const conversations = await botApi.fetchConversations()
-      dispatch({ type: "SET_CONVERSATIONS", payload: conversations })
-    } catch (error) {
-      console.error("[v0] Failed to fetch conversations:", error)
-      dispatch({ type: "SET_ERROR", payload: "Failed to load conversations" })
+      const response = await fetch(`/api/onboarding/whatsapp?restaurantId=${restaurantId}`, { cache: "no-store" })
+      if (!response.ok) {
+        return
+      }
+      const payload = await response.json()
+      if (payload?.bot) {
+        dispatch({
+          type: "SET_BOT_STATUS",
+          payload: {
+            enabled: (payload.bot.status || "PENDING").toUpperCase() === "ACTIVE",
+            lastSyncedAt: payload.bot.updatedAt ?? payload.bot.createdAt,
+          },
+        })
+      }
+    } catch (err) {
+      console.warn("Failed to load bot status", err)
     }
-  }
+  }, [])
 
-  const selectConversation = async (id: string) => {
-    dispatch({ type: "SET_SELECTED_CONVERSATION", payload: id })
+  const loadConversations = useCallback(async () => {
+      dispatch({ type: "SET_LOADING_CONVERSATIONS", payload: true })
+      try {
+        const res = await fetch(`/api/conversations?take=50`, { cache: "no-store" })
+        if (!res.ok) {
+          throw new Error("Failed to load conversations")
+        }
+        const payload = await res.json()
+        const conversations = (payload.conversations || payload || []).map(normalizeConversation)
+        dispatch({ type: "SET_CONVERSATIONS", payload: conversations })
+      } catch (err) {
+        console.error("Load conversations error", err)
+        dispatch({ type: "SET_ERROR", payload: err instanceof Error ? err.message : "Failed to load conversations" })
+      } finally {
+        dispatch({ type: "SET_LOADING_CONVERSATIONS", payload: false })
+      }
+    }, [])
 
-    // If messages already cached, don't show loading
-    if (!state.messages[id]) {
-      dispatch({ type: "SET_LOADING", payload: { key: "messages", value: true } })
-    }
-
+  const loadMessages = useCallback(async (conversationId: string) => {
+    if (!conversationId) return
+    dispatch({ type: "SET_LOADING_MESSAGES", payload: true })
     try {
-      const messages = await botApi.fetchMessages(id)
-      dispatch({ type: "SET_MESSAGES", payload: { conversationId: id, messages } })
-    } catch (error) {
-      console.error("[v0] Failed to fetch messages:", error)
-      dispatch({ type: "SET_ERROR", payload: "Failed to load messages" })
+      const res = await fetch(`/api/messages?conversationId=${conversationId}&take=100`, { cache: "no-store" })
+      if (!res.ok) {
+        throw new Error("Failed to load messages")
+      }
+      const payload = await res.json()
+      const messages = (payload.messages || payload || []).map(normalizeMessage)
+      dispatch({ type: "SET_MESSAGES", payload: { conversationId, messages } })
+    } catch (err) {
+      console.error("Load messages error", err)
+      dispatch({ type: "SET_ERROR", payload: err instanceof Error ? err.message : "Failed to load messages" })
     } finally {
-      dispatch({ type: "SET_LOADING", payload: { key: "messages", value: false } })
+      dispatch({ type: "SET_LOADING_MESSAGES", payload: false })
     }
-  }
+  }, [])
 
-  const sendMessage = async (content: string) => {
-    if (!state.selectedConversationId) return
-
-    const optimisticMessage: Message = {
-      id: `temp-${Date.now()}`,
-      conversation_id: state.selectedConversationId,
-      from_phone: "",
-      to_phone: "",
-      message_type: "text",
-      content,
-      media_url: null,
-      timestamp: new Date().toISOString(),
-      is_from_customer: false,
-    }
-
-    dispatch({
-      type: "ADD_OPTIMISTIC_MESSAGE",
-      payload: { conversationId: state.selectedConversationId, message: optimisticMessage },
-    })
-
+  const refreshConversations = useCallback(async () => {
     try {
-      const actualMessage = await botApi.sendMessage(state.selectedConversationId, content)
+      if (!state.restaurantId && realtimeRestaurantId) {
+        dispatch({ type: "SET_RESTAURANT", payload: realtimeRestaurantId })
+      }
+
+      const rid = state.restaurantId || realtimeRestaurantId
+      if (!rid) {
+        return
+      }
+      await loadConversations()
+    } catch (err) {
+      console.error("Refresh conversations error", err)
+    }
+  }, [loadConversations, realtimeRestaurantId, state.restaurantId])
+
+  const selectConversation = useCallback(
+    async (conversationId: string | null) => {
+      dispatch({ type: "SET_SELECTED", payload: conversationId })
+      if (conversationId) {
+        await loadMessages(conversationId)
+      }
+    },
+    [loadMessages],
+  )
+
+  const sendMessage = useCallback(
+    async (text: string) => {
+      if (!state.restaurantId || !state.selectedConversationId) {
+        throw new Error("Conversation not selected")
+      }
+
+      dispatch({ type: "SET_SENDING", payload: true })
+      const tempId = `temp-${Date.now()}`
       dispatch({
-        type: "REPLACE_OPTIMISTIC_MESSAGE",
+        type: "ADD_MESSAGE",
         payload: {
+          id: tempId,
           conversationId: state.selectedConversationId,
-          tempId: optimisticMessage.id,
-          message: actualMessage,
+          direction: "OUT",
+          body: text,
+          createdAt: new Date().toISOString(),
         },
       })
-    } catch (error) {
-      dispatch({
-        type: "REMOVE_OPTIMISTIC_MESSAGE",
-        payload: { conversationId: state.selectedConversationId, messageId: optimisticMessage.id },
-      })
-      throw error
-    }
-  }
 
-  const toggleBot = async (enabled: boolean) => {
-    dispatch({ type: "SET_LOADING", payload: { key: "botToggle", value: true } })
-    try {
-      const newStatus = await botApi.toggleBot(enabled)
-      dispatch({ type: "SET_BOT_STATUS", payload: newStatus })
-    } catch (error) {
-      console.error("[v0] Failed to toggle bot:", error)
-      throw error
-    } finally {
-      dispatch({ type: "SET_LOADING", payload: { key: "botToggle", value: false } })
-    }
-  }
+      try {
+        const res = await fetch("/api/messages/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            restaurantId: state.restaurantId,
+            conversationId: state.selectedConversationId,
+            text,
+          }),
+        })
+
+        if (!res.ok) {
+          throw new Error("Failed to send message")
+        }
+
+        await loadMessages(state.selectedConversationId)
+      } catch (err) {
+        console.error("Send message error", err)
+        toast.error("Failed to send message")
+        await loadMessages(state.selectedConversationId)
+      } finally {
+        dispatch({ type: "SET_SENDING", payload: false })
+      }
+    },
+    [loadMessages, state.restaurantId, state.selectedConversationId],
+  )
 
   useEffect(() => {
-    const connectWebSocket = () => {
-      const ws = botApi.connectWebSocket()
-      if (!ws) return
+    if (isInitialisedRef.current) {
+      return
+    }
 
-      wsRef.current = ws
+    isInitialisedRef.current = true
 
-      ws.onopen = () => {
-        console.log("[v0] Bot WebSocket connected")
-        dispatch({ type: "SET_CONNECTED", payload: true })
-      }
-
-      ws.onmessage = (event) => {
-        if (event.data === "pong") {
-          console.log("[v0] Bot WebSocket pong received")
-          return
-        }
-
-        try {
-          const data = JSON.parse(event.data)
-          const payload = data?.data ?? data?.message ?? data?.conversation ?? data?.status
-
-          console.log("[v0] Bot WebSocket message:", data)
-
-          const serialized = JSON.stringify(data)
-          if (lastMessageRef.current === serialized) {
-            return
-          }
-          lastMessageRef.current = serialized
-
-          switch (data.type) {
-            case "message.created":
-            case "message.updated":
-            case "message_update":
-              if (payload?.conversation_id) {
-                dispatch({
-                  type: "ADD_MESSAGE",
-                  payload: { conversationId: payload.conversation_id, message: payload },
-                })
-              }
-              break
-            case "conversation.updated":
-            case "conversation_update":
-              if (payload) {
-                dispatch({ type: "UPDATE_CONVERSATION", payload })
-              }
-              break
-            case "bot.status.updated":
-            case "bot_status_update":
-              if (payload) {
-                dispatch({ type: "SET_BOT_STATUS", payload })
-              }
-              break
-          }
-        } catch (error) {
-          console.error("[v0] Failed to parse WebSocket message:", error)
-        }
-      }
-
-      ws.onclose = () => {
-        console.log("[v0] Bot WebSocket disconnected")
-        dispatch({ type: "SET_CONNECTED", payload: false })
-        // Reconnect after 5 seconds
-        setTimeout(connectWebSocket, 5000)
-      }
-
-      ws.onerror = (error) => {
-        console.error("[v0] Bot WebSocket error:", error)
-        dispatch({ type: "SET_CONNECTED", payload: false })
+    const initialise = async () => {
+      try {
+        const rid = await fetchRestaurant()
+        await Promise.all([loadConversations(), loadBotStatus(rid)])
+      } catch (err) {
+        console.error("Chat initialise error", err)
+        dispatch({ type: "SET_ERROR", payload: err instanceof Error ? err.message : "Failed to initialise chat" })
       }
     }
 
-    connectWebSocket()
+    void initialise()
+  }, [fetchRestaurant, loadBotStatus, loadConversations])
+
+  useEffect(() => {
+    const unsubscribe = subscribeToMessages((payload) => {
+      try {
+        const message = payload.message ? normalizeMessage(payload.message) : normalizeMessage(payload)
+        dispatch({ type: "ADD_MESSAGE", payload: message })
+
+        if (payload.conversation) {
+          const conversation = normalizeConversation(payload.conversation)
+          dispatch({ type: "UPSERT_CONVERSATION", payload: conversation })
+        } else {
+          const conversation = state.conversations.find((conv) => conv.id === message.conversationId)
+          if (conversation) {
+            dispatch({
+              type: "UPSERT_CONVERSATION",
+              payload: {
+                ...conversation,
+                lastMessageAt: message.createdAt,
+                unreadCount:
+                  state.selectedConversationId === conversation.id || message.direction === "OUT"
+                    ? conversation.unreadCount
+                    : conversation.unreadCount + 1,
+              },
+            })
+          }
+        }
+      } catch (err) {
+        console.error("Realtime message handling failed", err)
+      }
+    })
 
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
+      unsubscribe()
     }
-  }, [])
+  }, [state.conversations, state.selectedConversationId, subscribeToMessages])
 
-  const contextValue: ChatContextType = {
-    ...state,
-    selectConversation,
-    sendMessage,
-    toggleBot,
-    refetchConversations: fetchConversations,
-  }
+  const value = useMemo<ChatContextValue>(
+    () => ({
+      ...state,
+      selectConversation,
+      refreshConversations,
+      loadMessages,
+      sendMessage,
+    }),
+    [loadMessages, refreshConversations, selectConversation, sendMessage, state],
+  )
 
-  return <ChatContext.Provider value={contextValue}>{children}</ChatContext.Provider>
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }
 
 export function useChat() {

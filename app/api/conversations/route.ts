@@ -68,14 +68,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: "Customer phone is required" }, { status: 400 })
     }
 
-    const customerWa = customer_phone.startsWith("whatsapp:") ? customer_phone : `whatsapp:${customer_phone}`
-
-    const conversation = await db.createConversation({
-      restaurantId: restaurant.id,
-      customerWa,
-      lastMessageAt: new Date(),
-      status: "OPEN",
-    })
+    // Find or create conversation using normalized phone
+    const conversation = await db.findOrCreateConversation(
+      restaurant.id,
+      customer_phone,
+      customer_name ?? null,
+    )
 
     return NextResponse.json({ success: true, conversation })
   } catch (error) {

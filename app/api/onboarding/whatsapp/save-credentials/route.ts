@@ -6,6 +6,7 @@ import { z } from "zod"
 const payloadSchema = z.object({
   restaurantId: z.string(),
   wabaId: z.string(),
+  // Require E.164 with leading plus
   whatsappNumber: z.string().regex(/^\+[1-9]\d{7,14}$/, "Invalid WhatsApp number format"),
   senderSid: z.string(),
   status: z.string(), // e.g., "approved", "pending", "rejected"
@@ -43,7 +44,14 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { restaurantId, wabaId, whatsappNumber, senderSid, status } = payloadSchema.parse(body)
+    // Normalize number to ensure leading plus before validation
+    const normalizedInput = typeof body?.whatsappNumber === "string"
+      ? (body.whatsappNumber.startsWith("+") ? body.whatsappNumber : `+${body.whatsappNumber}`)
+      : body?.whatsappNumber
+    const { restaurantId, wabaId, whatsappNumber, senderSid, status } = payloadSchema.parse({
+      ...body,
+      whatsappNumber: normalizedInput,
+    })
 
     console.log(`[Save Credentials] Received: restaurantId=${restaurantId}, wabaId=${wabaId}, number=${whatsappNumber}, senderSid=${senderSid}, status=${status}`)
 
@@ -115,41 +123,37 @@ export async function POST(request: Request) {
       console.warn(`[Save Credentials] Replacing existing number ${existingBot.whatsappNumber} with ${whatsappNumber}`)
     }
 
-    const bot = await prisma.restaurantBot.upsert({
+    // Use findFirst + update/create pattern to avoid issues with nullable unique fields in upsert
+    const existingBotRecord = await prisma.restaurantBot.findFirst({
       where: { restaurantId: restaurant.id },
-      update: {
-        accountSid,
-        name: restaurant.name,
-        restaurantName: restaurant.name,
-        whatsappNumber,
-        senderSid,
-        wabaId,
-        status: botStatus,
-        verifiedAt: botStatus === "ACTIVE" ? new Date() : null,
-        errorMessage,
-        // For Embedded Signup, clear verificationSid since no OTP is needed
-        verificationSid: null,
-        // Keep master account credentials
-        subaccountSid: accountSid,
-        authToken: authToken,
-      },
-      create: {
-        restaurantId: restaurant.id,
-        accountSid,
-        name: restaurant.name,
-        restaurantName: restaurant.name,
-        whatsappNumber,
-        senderSid,
-        wabaId,
-        status: botStatus,
-        verifiedAt: botStatus === "ACTIVE" ? new Date() : null,
-        errorMessage,
-        // Embedded Signup doesn't need verificationSid
-        verificationSid: null,
-        subaccountSid: accountSid,
-        authToken: authToken,
-      },
     })
+
+    const botData = {
+      accountSid,
+      name: restaurant.name,
+      restaurantName: restaurant.name,
+      whatsappNumber,
+      senderSid,
+      wabaId,
+      status: botStatus,
+      verifiedAt: botStatus === "ACTIVE" ? new Date() : null,
+      errorMessage,
+      verificationSid: null,
+      subaccountSid: accountSid,
+      authToken: authToken,
+    }
+
+    const bot = existingBotRecord
+      ? await prisma.restaurantBot.update({
+          where: { id: existingBotRecord.id },
+          data: botData,
+        })
+      : await prisma.restaurantBot.create({
+          data: {
+            ...botData,
+            restaurantId: restaurant.id,
+          },
+        })
 
     // Also update the restaurant's whatsappNumber field
     await prisma.restaurant.update({

@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Building2, Zap } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
 import { WhatsAppSetupForm } from "@/components/onboarding/WhatsAppSetupForm"
 import { OTPVerification } from "@/components/onboarding/OTPVerification"
 
@@ -59,6 +61,9 @@ export default function OnboardingPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isShared, setIsShared] = useState<boolean>(false)
+  const [availableBots, setAvailableBots] = useState<any[]>([])
+  const [selectedBotId, setSelectedBotId] = useState<string>("")
+  const [linking, setLinking] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -92,6 +97,17 @@ export default function OnboardingPage() {
               setBot(payload.bot ?? null)
               setIsShared(Boolean(payload.isShared))
             }
+          }
+
+          // Load available shared senders for dropdown
+          try {
+            const sendersRes = await fetch(`/api/onboarding/shared-senders`, { cache: "no-store" })
+            if (sendersRes.ok) {
+              const list = await sendersRes.json()
+              setAvailableBots(Array.isArray(list) ? list : [])
+            }
+          } catch {
+            // ignore; dropdown will just be empty
           }
         }
       } catch (err) {
@@ -140,7 +156,8 @@ export default function OnboardingPage() {
   }, [restaurant?.id])
 
   const resolvedStatus = resolveStatus(bot?.status)
-  const displayNumber = bot?.whatsappNumber || "Not connected"
+  // Display with leading plus for readability
+  const displayNumber = bot?.whatsappNumber ? (bot.whatsappNumber.startsWith("+") ? bot.whatsappNumber : `+${bot.whatsappNumber}`) : "Not connected"
 
   const content = isLoading ? (
     <div className="space-y-6">
@@ -386,34 +403,59 @@ export default function OnboardingPage() {
               ) : (
                 <div className="space-y-4">
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
-                    <p className="font-medium text-emerald-900">✨ Quick Start (Recommended)</p>
-                    <p className="mt-1 text-xs text-emerald-700">
-                      Use our shared WhatsApp Business number <strong>+966508034010</strong>. Messages from customers will be routed to your dashboard automatically.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          setError(null)
-                          const response = await fetch("/api/onboarding/whatsapp/use-existing", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ restaurantId: restaurant.id }),
-                          })
-                          const data = await response.json()
-                          if (!response.ok || !data.success) {
-                            throw new Error(data.error || "Failed to activate")
+                    <p className="font-medium text-emerald-900">✨ ربط مرسل واتساب مشترك</p>
+                    <div className="mt-3 grid gap-2">
+                      <label className="text-xs text-muted-foreground">اختر مرسل واتساب</label>
+                      <Select value={selectedBotId} onValueChange={setSelectedBotId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="اختر..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableBots.length === 0 ? (
+                            <SelectItem value="__none" disabled>لا توجد أرقام متاحة الآن</SelectItem>
+                          ) : (
+                            availableBots.map((b: any) => (
+                              <SelectItem key={b.id} value={b.id} disabled={Boolean(b.restaurantId)}>
+                                {(b.restaurantName || b.name) + " — " + (b.whatsappNumber || "")}
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        onClick={async () => {
+                          if (!selectedBotId || selectedBotId === "__none") return
+                          try {
+                            setError(null)
+                            setLinking(true)
+                            const res = await fetch("/api/onboarding/link-sender", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ botId: selectedBotId, restaurantId: restaurant.id }),
+                            })
+                            setLinking(false)
+                            if (!res.ok) {
+                              const err = await res.json().catch(() => ({}))
+                              alert(
+                                err?.error ||
+                                  "فشل الربط. إذا كان الرقم مربوطاً بمطعم آخر، يرجى فكه أولاً ثم إعادة المحاولة."
+                              )
+                              return
+                            }
+                            const data = await res.json()
+                            setBot(data.bot as RestaurantBot)
+                            setIsShared(true)
+                          } catch (e) {
+                            setLinking(false)
+                            setError("حدث خطأ أثناء الربط")
                           }
-                          setBot(data.bot as RestaurantBot)
-                          window.location.reload()
-                        } catch (err) {
-                          setError(err instanceof Error ? err.message : "Activation failed")
-                        }
-                      }}
-                      className="mt-3 w-full rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-                    >
-                      ✓ Use Shared Number (Instant Setup)
-                    </button>
+                        }}
+                        disabled={!selectedBotId || selectedBotId === "__none" || linking}
+                        className="mt-2"
+                      >
+                        {linking ? "جاري الربط…" : "ربط"}
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="relative">
@@ -421,15 +463,15 @@ export default function OnboardingPage() {
                       <div className="w-full border-t border-border"></div>
                     </div>
                     <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-background px-2 text-muted-foreground">Or</span>
+                      <span className="bg-background px-2 text-muted-foreground">أو</span>
                     </div>
                   </div>
 
                   <details className="text-xs text-muted-foreground">
-                    <summary className="cursor-pointer font-medium text-sm">Use Your Own WhatsApp Number</summary>
+                    <summary className="cursor-pointer font-medium text-sm">استخدم رقمك الخاص</summary>
                     <div className="mt-3 space-y-3 rounded border border-border bg-muted/30 p-3">
                       <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-xs text-amber-700">
-                        ⚠️ <strong>Note:</strong> Your number must first be approved by Meta through Twilio Console Self Sign-Up. This process can take 1-2 weeks.
+                        ⚠️ <strong>ملاحظة:</strong> يجب اعتماد الرقم عبر Twilio/Meta وقد تستغرق العملية من 1-2 أسبوع.
                       </div>
                       <WhatsAppSetupForm
                         restaurantId={restaurant.id}

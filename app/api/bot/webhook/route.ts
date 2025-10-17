@@ -13,11 +13,14 @@ export async function POST(request: NextRequest) {
     const normalize = (value: string | undefined | null) => {
       if (!value) return null
       const trimmed = value.trim()
-      return trimmed.startsWith("whatsapp:") ? trimmed.slice(9) : trimmed
+      const withoutPrefix = trimmed.startsWith("whatsapp:") ? trimmed.slice(9) : trimmed
+      // Keep + for canonical storage & matching
+      return withoutPrefix.startsWith("+") ? withoutPrefix : `+${withoutPrefix}`
     }
 
     const toNumber = normalize(to_phone)
-    const fromAddress = typeof from_phone === "string" && from_phone.startsWith("whatsapp:") ? from_phone : `whatsapp:${from_phone}`
+    const fromPlus = normalize(from_phone) || ""
+    const fromAddress = `whatsapp:${fromPlus}`
 
     if (!toNumber) {
       return NextResponse.json({ success: false, error: "Missing destination" }, { status: 400 })

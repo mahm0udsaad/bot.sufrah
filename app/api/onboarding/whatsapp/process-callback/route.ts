@@ -74,7 +74,10 @@ export async function POST(request: Request) {
 
         // Extract the WhatsApp sender information
         const wabaId = signup.wabaId
-        const phoneNumber = signup.phoneNumber
+        // Normalize: ensure leading plus for storage consistency
+        const phoneNumber = (signup.phoneNumber || "").startsWith("+")
+          ? signup.phoneNumber
+          : `+${signup.phoneNumber || ""}`
         const senderSid = signup.sid // or might need to fetch separately
 
         if (!wabaId || !phoneNumber) {
@@ -82,36 +85,36 @@ export async function POST(request: Request) {
         }
 
         // Save credentials
-        const bot = await prisma.restaurantBot.upsert({
+        // Use findFirst + update/create pattern to avoid issues with nullable unique fields in upsert
+        const existingBotRecord = await prisma.restaurantBot.findFirst({
           where: { restaurantId: restaurant.id },
-          update: {
-            accountSid,
-            name: restaurant.name,
-            restaurantName: restaurant.name,
-            whatsappNumber: phoneNumber,
-            senderSid: senderSid || null,
-            wabaId,
-            status: signup.status === "APPROVED" ? "ACTIVE" : "VERIFYING",
-            verifiedAt: signup.status === "APPROVED" ? new Date() : null,
-            errorMessage: null,
-            verificationSid: null, // No OTP needed for embedded signup
-            subaccountSid: accountSid,
-            authToken: authToken,
-          },
-          create: {
-            restaurantId: restaurant.id,
-            accountSid,
-            name: restaurant.name,
-            restaurantName: restaurant.name,
-            whatsappNumber: phoneNumber,
-            senderSid: senderSid || null,
-            wabaId,
-            status: signup.status === "APPROVED" ? "ACTIVE" : "VERIFYING",
-            verifiedAt: signup.status === "APPROVED" ? new Date() : null,
-            verificationSid: null,
-            subaccountSid: accountSid,
-            authToken: authToken,
-          },
+        })
+
+        const botData = {
+          accountSid,
+          name: restaurant.name,
+          restaurantName: restaurant.name,
+          whatsappNumber: phoneNumber,
+          senderSid: senderSid || null,
+          wabaId,
+          status: (signup.status === "APPROVED" ? "ACTIVE" : "VERIFYING") as "ACTIVE" | "VERIFYING",
+          verifiedAt: signup.status === "APPROVED" ? new Date() : null,
+          errorMessage: null,
+          verificationSid: null, // No OTP needed for embedded signup
+          subaccountSid: accountSid,
+          authToken: authToken,
+        }
+
+        const bot = existingBotRecord
+          ? await prisma.restaurantBot.update({
+              where: { id: existingBotRecord.id },
+              data: botData,
+            })
+          : await prisma.restaurantBot.create({
+              data: {
+                ...botData,
+                restaurantId: restaurant.id,
+              },
         })
 
         await prisma.restaurant.update({

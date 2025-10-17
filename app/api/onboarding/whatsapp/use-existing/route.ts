@@ -32,7 +32,9 @@ export async function POST(request: Request) {
     }
 
     // Use the shared WhatsApp number from env
-    const sharedWhatsAppNumber = process.env.TWILIO_WHATSAPP_FROM
+    // Normalize shared number to +E.164
+    const envFrom = process.env.TWILIO_WHATSAPP_FROM
+    const sharedWhatsAppNumber = envFrom?.startsWith("+") ? envFrom : envFrom ? `+${envFrom.replace(/^whatsapp:/, "")}` : undefined
     const wabaId = process.env.TWILIO_WABA_ID
     const accountSid = process.env.TWILIO_ACCOUNT_SID
     const authToken = process.env.TWILIO_AUTH_TOKEN
@@ -48,35 +50,37 @@ export async function POST(request: Request) {
     console.log(`[Use Existing Number] WABA ID: ${wabaId}`)
 
     // Create/update bot record with the shared number
-    const bot = await prisma.restaurantBot.upsert({
+    // Use findFirst + update/create pattern to avoid issues with nullable unique fields in upsert
+    const existingBot = await prisma.restaurantBot.findFirst({
       where: { restaurantId: restaurant.id },
-      update: {
-        accountSid: accountSid,
-        name: restaurant.name,
-        restaurantName: restaurant.name,
-        whatsappNumber: sharedWhatsAppNumber,
-        wabaId: wabaId,
-        subaccountSid: accountSid,
-        authToken: authToken,
-        status: "ACTIVE",
-        verifiedAt: new Date(),
-        errorMessage: null,
-        senderSid: null, // No sender SID for shared number
-        verificationSid: null, // No verification needed
-      },
-      create: {
-        restaurantId: restaurant.id,
-        accountSid: accountSid,
-        name: restaurant.name,
-        restaurantName: restaurant.name,
-        whatsappNumber: sharedWhatsAppNumber,
-        wabaId: wabaId,
-        subaccountSid: accountSid,
-        authToken: authToken,
-        status: "ACTIVE",
-        verifiedAt: new Date(),
-      },
     })
+
+    const botData = {
+      accountSid: accountSid,
+      name: restaurant.name,
+      restaurantName: restaurant.name,
+      whatsappNumber: sharedWhatsAppNumber,
+      wabaId: wabaId,
+      subaccountSid: accountSid,
+      authToken: authToken,
+      status: "ACTIVE" as const,
+      verifiedAt: new Date(),
+      errorMessage: null,
+      senderSid: null, // No sender SID for shared number
+      verificationSid: null, // No verification needed
+    }
+
+    const bot = existingBot
+      ? await prisma.restaurantBot.update({
+          where: { id: existingBot.id },
+          data: botData,
+        })
+      : await prisma.restaurantBot.create({
+          data: {
+            ...botData,
+            restaurantId: restaurant.id,
+          },
+        })
 
     console.log(`[Use Existing Number] ✅ Bot activated with shared number`)
 

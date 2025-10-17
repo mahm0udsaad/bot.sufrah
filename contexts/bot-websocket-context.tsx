@@ -2,8 +2,8 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 
-const BOT_WS_URL = process.env.BOT_WS_URL || "wss://bot.sufrah.sa/ws"
-const BOT_API_URL = process.env.BOT_API_URL || "https://bot.sufrah.sa/api"
+const BOT_WS_URL = process.env.NEXT_PUBLIC_BOT_WS_URL || process.env.BOT_WS_URL || "wss://bot.sufrah.sa/ws"
+const BOT_API_URL = process.env.NEXT_PUBLIC_BOT_API_URL || process.env.BOT_API_URL || "https://bot.sufrah.sa/api"
 
 interface BotConversation {
   id: string
@@ -32,14 +32,44 @@ interface BotStatusData {
 }
 
 interface WebSocketMessage {
-  type: "connection" | "conversation.bootstrap" | "message.created" | "conversation.updated" | "bot.status"
+  type:
+    | "connection"
+    | "conversation.bootstrap"
+    | "message.created"
+    | "conversation.updated"
+    | "bot.status"
+    | "order.created"
+    | "order.updated"
   data: any
+}
+
+interface OrderItem {
+  id: string
+  name: string
+  qty: number
+  unitCents: number
+  totalCents: number
+}
+
+interface OrderEventPayload {
+  order: {
+    id: string
+    orderReference?: string | null
+    status: string
+    orderType?: string | null
+    paymentMethod?: string | null
+    totalCents: number
+    currency: string
+    createdAt: string
+    items: OrderItem[]
+  }
 }
 
 type ConversationHandler = (conversation: BotConversation) => void
 type MessageHandler = (message: BotMessage) => void
 type StatusHandler = (status: BotStatusData) => void
 type BootstrapHandler = (conversations: BotConversation[]) => void
+type OrderHandler = (payload: OrderEventPayload) => void
 
 interface BotWebSocketContextValue {
   status: "idle" | "connecting" | "connected" | "error"
@@ -50,9 +80,11 @@ interface BotWebSocketContextValue {
   subscribeToMessages: (handler: MessageHandler) => () => void
   subscribeToConversationUpdates: (handler: ConversationHandler) => () => void
   subscribeToStatusUpdates: (handler: StatusHandler) => () => void
+  subscribeToOrderEvents: (handler: OrderHandler) => () => void
   fetchConversations: () => Promise<BotConversation[]>
   fetchMessages: (conversationId: string) => Promise<BotMessage[]>
   sendMessage: (conversationId: string, message: string) => Promise<void>
+  sendMedia: (conversationId: string, fileOrUrl: File | string, caption?: string) => Promise<void>
   toggleBot: (enabled: boolean) => Promise<void>
   reconnect: () => void
 }
@@ -74,6 +106,7 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
   const messageHandlers = useRef<Set<MessageHandler>>(new Set())
   const conversationHandlers = useRef<Set<ConversationHandler>>(new Set())
   const statusHandlers = useRef<Set<StatusHandler>>(new Set())
+  const orderHandlers = useRef<Set<OrderHandler>>(new Set())
 
   const connect = () => {
     if (socketRef.current?.readyState === WebSocket.OPEN || 
@@ -119,40 +152,78 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
               break
               
             case "conversation.bootstrap":
-              console.log("Received conversation bootstrap:", message.data.length, "conversations")
-              const bootstrapConvs = message.data as BotConversation[]
-              setConversations(bootstrapConvs)
-              bootstrapHandlers.current.forEach((handler) => handler(bootstrapConvs))
+              // ⚠️ IGNORE BOOTSTRAP - It uses in-memory cache that clears on restart
+              // We fetch from database instead via fetchConversations()
+              console.log("Received conversation bootstrap (IGNORING - using database instead)")
+              // Don't set conversations from bootstrap - we get them from database
               break
               
             case "message.created":
-              const newMessage = message.data as BotMessage
-              messageHandlers.current.forEach((handler) => handler(newMessage))
+              // Normalize message payload to internal shape
+              {
+                const m: any = message.data
+                const normalized: BotMessage = {
+                  id: m.id,
+                  conversation_id: m.conversation_id ?? m.conversationId,
+                  from_phone: m.from_phone ?? m.fromPhone ?? "",
+                  to_phone: m.to_phone ?? m.toPhone ?? "",
+                  message_type: m.message_type ?? m.messageType ?? (m.media_url || m.mediaUrl ? "document" : "text"),
+                  content: m.content ?? m.body ?? "",
+                  media_url: m.media_url ?? m.mediaUrl ?? null,
+                  timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
+                  is_from_customer: typeof m.is_from_customer === "boolean" ? m.is_from_customer : (m.direction ?? "OUT") === "IN",
+                }
+                messageHandlers.current.forEach((handler) => handler(normalized))
+              }
               break
               
             case "conversation.updated":
-              const updatedConv = message.data as BotConversation
-              setConversations((prev) => {
-                const index = prev.findIndex((c) => c.id === updatedConv.id)
-                if (index >= 0) {
-                  const updated = [...prev]
-                  updated[index] = { ...updated[index], ...updatedConv }
-                  return updated.sort((a, b) => 
-                    new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
-                  )
-                } else {
-                  return [updatedConv, ...prev].sort((a, b) => 
-                    new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
-                  )
+              {
+                const c: any = message.data
+                const updatedConv: BotConversation = {
+                  id: c.id,
+                  customer_phone: c.customer_phone ?? c.customerPhone ?? c.customerWa ?? "",
+                  customer_name: c.customer_name ?? c.customerName ?? null,
+                  status: (c.status ?? "active").toString().toLowerCase(),
+                  last_message_at: c.last_message_at ?? c.lastMessageAt ?? new Date().toISOString(),
+                  unread_count: c.unread_count ?? c.unreadCount ?? 0,
+                  is_bot_active: c.is_bot_active ?? c.isBotActive ?? true,
                 }
-              })
-              conversationHandlers.current.forEach((handler) => handler(updatedConv))
+                setConversations((prev) => {
+                  const index = prev.findIndex((cv) => cv.id === updatedConv.id)
+                  if (index >= 0) {
+                    const updated = [...prev]
+                    updated[index] = { ...updated[index], ...updatedConv }
+                    return updated.sort(
+                      (a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime(),
+                    )
+                  } else {
+                    return [updatedConv, ...prev].sort(
+                      (a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime(),
+                    )
+                  }
+                })
+                conversationHandlers.current.forEach((handler) => handler(updatedConv))
+              }
               break
               
             case "bot.status":
               const statusData = message.data as BotStatusData
               setBotEnabled(statusData.enabled)
               statusHandlers.current.forEach((handler) => handler(statusData))
+              break
+
+            case "order.created":
+            case "order.updated":
+              {
+                const payload: OrderEventPayload = message.data?.order
+                  ? { order: message.data.order }
+                  : (message.data as OrderEventPayload)
+                // Basic validation
+                if (payload && payload.order && payload.order.id) {
+                  orderHandlers.current.forEach((handler) => handler(payload))
+                }
+              }
               break
           }
         } catch (err) {
@@ -221,31 +292,123 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // REST API methods
+  // REST API methods - ✅ USE DATABASE-BACKED ENDPOINTS
   const fetchConversations = async (): Promise<BotConversation[]> => {
-    const res = await fetch(`${BOT_API_URL}/conversations`)
+    // Fetch from database-backed API to ensure data persists across restarts
+    const res = await fetch(`/api/conversations/db`, { cache: "no-store" })
     if (!res.ok) {
-      throw new Error("Failed to fetch conversations")
+      // Fallback to old endpoint if new one not available yet
+      console.warn("Database-backed API not available, trying legacy endpoint")
+      const fallbackRes = await fetch(`/api/conversations`, { cache: "no-store" })
+      if (!fallbackRes.ok) {
+        throw new Error("Failed to fetch conversations")
+      }
+      const fallbackPayload = await fallbackRes.json()
+      const fallbackList: any[] = fallbackPayload.conversations || fallbackPayload || []
+      return fallbackList.map((c) => ({
+        id: c.id,
+        customer_phone: c.customer_phone ?? c.customerPhone ?? c.customerWa ?? "",
+        customer_name: c.customer_name ?? c.customerName ?? null,
+        status: (c.status ?? "active").toString().toLowerCase(),
+        last_message_at: c.last_message_at ?? c.lastMessageAt ?? new Date().toISOString(),
+        unread_count: c.unread_count ?? c.unreadCount ?? 0,
+        is_bot_active: c.is_bot_active ?? c.isBotActive ?? true,
+      }))
     }
-    return res.json()
+    const payload = await res.json()
+    const list: any[] = payload.conversations || payload || []
+    return list.map((c) => ({
+      id: c.id,
+      customer_phone: c.customer_phone ?? c.customerPhone ?? c.customerWa ?? "",
+      customer_name: c.customer_name ?? c.customerName ?? null,
+      status: (c.status ?? "active").toString().toLowerCase(),
+      last_message_at: c.last_message_at ?? c.lastMessageAt ?? new Date().toISOString(),
+      unread_count: c.unread_count ?? c.unreadCount ?? 0,
+      is_bot_active: c.is_bot_active ?? c.isBotActive ?? true,
+    }))
   }
 
   const fetchMessages = async (conversationId: string): Promise<BotMessage[]> => {
-    const res = await fetch(`${BOT_API_URL}/conversations/${encodeURIComponent(conversationId)}/messages`)
+    // ✅ USE DATABASE-BACKED API for message history
+    const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages/db`, { cache: "no-store" })
     if (!res.ok) {
-      throw new Error("Failed to fetch messages")
+      // Fallback to old endpoint if new one not available yet
+      console.warn("Database-backed messages API not available, trying legacy endpoint")
+      const fallbackRes = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, { cache: "no-store" })
+      if (!fallbackRes.ok) {
+        throw new Error("Failed to fetch messages")
+      }
+      const fallbackPayload = await fallbackRes.json()
+      const fallbackList: any[] = fallbackPayload.messages || fallbackPayload || []
+      return fallbackList.map((m) => ({
+        id: m.id,
+        conversation_id: m.conversation_id ?? m.conversationId,
+        from_phone: m.from_phone ?? m.fromPhone ?? "",
+        to_phone: m.to_phone ?? m.toPhone ?? "",
+        message_type: m.message_type ?? m.messageType ?? (m.media_url || m.mediaUrl ? "document" : "text"),
+        content: m.content ?? m.body ?? "",
+        media_url: m.media_url ?? m.mediaUrl ?? null,
+        timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
+        is_from_customer: typeof m.is_from_customer === "boolean" ? m.is_from_customer : (m.direction ?? "OUT") === "IN",
+      }))
     }
-    return res.json()
+    const payload = await res.json()
+    const list: any[] = payload.messages || payload || []
+    return list.map((m) => ({
+      id: m.id,
+      conversation_id: m.conversation_id ?? m.conversationId,
+      from_phone: m.from_phone ?? m.fromPhone ?? "",
+      to_phone: m.to_phone ?? m.toPhone ?? "",
+      message_type: m.message_type ?? m.messageType ?? (m.media_url || m.mediaUrl ? "document" : "text"),
+      content: m.content ?? m.body ?? "",
+      media_url: m.media_url ?? m.mediaUrl ?? null,
+      timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
+      is_from_customer: typeof m.is_from_customer === "boolean" ? m.is_from_customer : (m.direction ?? "OUT") === "IN",
+    }))
   }
 
   const sendMessage = async (conversationId: string, message: string): Promise<void> => {
-    const res = await fetch(`${BOT_API_URL}/conversations/${encodeURIComponent(conversationId)}/send`, {
+    // Proxy through internal API to ensure auth and DB persistence
+    const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ content: message, sender_type: "agent" }),
     })
     if (!res.ok) {
       throw new Error("Failed to send message")
+    }
+  }
+
+  const sendMedia = async (
+    conversationId: string,
+    fileOrUrl: File | string,
+    caption?: string,
+  ): Promise<void> => {
+    // 1) If we received a File, upload it to storage to get a public URL
+    let mediaUrl: string
+    if (typeof fileOrUrl !== "string") {
+      const uploadForm = new FormData()
+      uploadForm.append("file", fileOrUrl)
+      uploadForm.append("fileName", fileOrUrl.name)
+
+      const uploadRes = await fetch(`/api/upload`, { method: "POST", body: uploadForm })
+      if (!uploadRes.ok) {
+        throw new Error("Failed to upload media")
+      }
+      const uploadJson = await uploadRes.json()
+      mediaUrl = uploadJson.url
+    } else {
+      mediaUrl = fileOrUrl
+    }
+
+    // 2) Send media URL to conversation endpoint (same-origin proxy)
+    const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/send-media`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mediaUrl, caption }),
+    })
+    if (!res.ok) {
+      throw new Error("Failed to send media")
     }
   }
 
@@ -262,34 +425,6 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
     setBotEnabled(data.enabled)
   }
 
-  const subscribeToBootstrap = (handler: BootstrapHandler) => {
-    bootstrapHandlers.current.add(handler)
-    return () => {
-      bootstrapHandlers.current.delete(handler)
-    }
-  }
-
-  const subscribeToMessages = (handler: MessageHandler) => {
-    messageHandlers.current.add(handler)
-    return () => {
-      messageHandlers.current.delete(handler)
-    }
-  }
-
-  const subscribeToConversationUpdates = (handler: ConversationHandler) => {
-    conversationHandlers.current.add(handler)
-    return () => {
-      conversationHandlers.current.delete(handler)
-    }
-  }
-
-  const subscribeToStatusUpdates = (handler: StatusHandler) => {
-    statusHandlers.current.add(handler)
-    return () => {
-      statusHandlers.current.delete(handler)
-    }
-  }
-
   return (
     <BotWebSocketContext.Provider
       value={{
@@ -297,13 +432,30 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
         error,
         botEnabled,
         conversations,
-        subscribeToBootstrap,
-        subscribeToMessages,
-        subscribeToConversationUpdates,
-        subscribeToStatusUpdates,
+        subscribeToBootstrap: (handler) => {
+          bootstrapHandlers.current.add(handler)
+          return () => bootstrapHandlers.current.delete(handler)
+        },
+        subscribeToMessages: (handler) => {
+          messageHandlers.current.add(handler)
+          return () => messageHandlers.current.delete(handler)
+        },
+        subscribeToConversationUpdates: (handler) => {
+          conversationHandlers.current.add(handler)
+          return () => conversationHandlers.current.delete(handler)
+        },
+        subscribeToStatusUpdates: (handler) => {
+          statusHandlers.current.add(handler)
+          return () => statusHandlers.current.delete(handler)
+        },
+        subscribeToOrderEvents: (handler) => {
+          orderHandlers.current.add(handler)
+          return () => orderHandlers.current.delete(handler)
+        },
         fetchConversations,
         fetchMessages,
         sendMessage,
+        sendMedia,
         toggleBot,
         reconnect,
       }}
@@ -320,4 +472,3 @@ export function useBotWebSocket() {
   }
   return context
 }
-

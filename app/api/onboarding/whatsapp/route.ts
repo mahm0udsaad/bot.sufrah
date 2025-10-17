@@ -68,7 +68,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: "Restaurant not found" }, { status: 404 })
     }
 
-    let bot = await prisma.restaurantBot.findUnique({ where: { restaurantId } })
+    // Use findFirst instead of findUnique to avoid issues with nullable unique fields
+    let bot = await prisma.restaurantBot.findFirst({ where: { restaurantId } })
 
     // If we're in VERIFYING but have no verificationSid yet, try to advance automatically
     if (bot?.status === "VERIFYING" && bot?.senderSid && !bot?.verificationSid) {
@@ -86,8 +87,9 @@ export async function GET(request: NextRequest) {
             const verificationSid = verification?.verification_sid as string | undefined
 
             if (verificationSid) {
+              // Update using primary key (id) instead of restaurantId
               bot = await prisma.restaurantBot.update({
-                where: { restaurantId },
+                where: { id: bot.id },
                 data: { verificationSid },
               })
             }
@@ -99,7 +101,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const isShared = !!bot?.whatsappNumber && bot.whatsappNumber === process.env.TWILIO_WHATSAPP_FROM
+    // Normalize to canonical +E.164 for comparison
+    const toPlus = (v?: string | null) => {
+      if (!v) return ""
+      const withoutPrefix = v.replace(/^whatsapp:/, "")
+      return withoutPrefix.startsWith("+") ? withoutPrefix : `+${withoutPrefix}`
+    }
+    const isShared = !!bot?.whatsappNumber && toPlus(bot.whatsappNumber) === toPlus(process.env.TWILIO_WHATSAPP_FROM)
     return NextResponse.json({ success: true, bot, isShared })
   } catch (error) {
     console.error("Failed to fetch WhatsApp bot", error)

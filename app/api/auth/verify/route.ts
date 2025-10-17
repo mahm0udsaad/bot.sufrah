@@ -16,9 +16,13 @@ export async function POST(request: NextRequest) {
     const formattedPhone = formatPhoneNumber(phone)
     console.log("[v0] Formatted phone for verification:", formattedPhone) // Add debug logging
 
-    const submittedWithPlus = typeof phone === "string" && phone.trim().startsWith("+")
-    const merchantLookupPhone = submittedWithPlus ? formattedPhone : `%2B${formattedPhone.slice(1)}`
-    const merchantLookupOptions = submittedWithPlus ? undefined : { preserveEncoding: true }
+    // For external merchant API: if user typed without '+', send digits-only (no +) as they expect,
+    // otherwise send standard E.164. Keep E.164 internally for DB/Twilio.
+    const inputTrimmed = typeof phone === "string" ? phone.trim() : ""
+    const digitsOnly = formattedPhone.replace(/^\+/, "")
+    const usingDigitsOnly = !inputTrimmed.startsWith("+")
+    const merchantLookupPhone = usingDigitsOnly ? digitsOnly : formattedPhone
+    const merchantLookupOptions = usingDigitsOnly ? undefined : undefined
     console.log("[v0] Merchant lookup value:", merchantLookupPhone) // Add debug logging
 
     const user = await db.getUserByPhone(formattedPhone)

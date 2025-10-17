@@ -28,15 +28,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Restaurant not found or access denied" }, { status: 403 })
     }
 
-    // Find bot
-    const bot = await prisma.restaurantBot.findUnique({ where: { restaurantId: restaurant.id } })
+    // Find bot (use findFirst instead of findUnique)
+    const bot = await prisma.restaurantBot.findFirst({ where: { restaurantId: restaurant.id } })
     if (!bot) {
       return NextResponse.json({ success: false, error: "No bot to delink" }, { status: 404 })
     }
 
     // Reset bot to PENDING and clear linkage fields. Keep subaccount/auth for future setup.
+    // Use primary key (id) for update instead of restaurantId
     const updatedBot = await prisma.restaurantBot.update({
-      where: { restaurantId: restaurant.id },
+      where: { id: bot.id },
       data: {
         status: "PENDING",
         whatsappNumber: "",

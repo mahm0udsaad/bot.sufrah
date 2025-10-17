@@ -14,6 +14,8 @@ import { Search, Download, Eye, Phone, Clock, MapPin, Loader2, Package, DollarSi
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth"
 import { RealtimeProvider, useRealtime } from "@/contexts/realtime-context"
+import { useBotWebSocket } from "@/contexts/bot-websocket-context"
+import { BotWebSocketProvider } from "@/contexts/bot-websocket-context"
 
 const STATUS_STYLES: Record<string, { label: string; badge: string }> = {
   DRAFT: { label: "Draft", badge: "bg-gray-100 text-gray-800" },
@@ -93,6 +95,7 @@ function normalizeStatus(status: string | undefined) {
 function OrdersContent() {
   const { user } = useAuth()
   const { subscribeToOrders } = useRealtime()
+  const { subscribeToOrderEvents } = useBotWebSocket()
 
   const [orders, setOrders] = useState<OrderRecord[]>([])
   const [stats, setStats] = useState<OrderStatsResponse | null>(null)
@@ -142,7 +145,29 @@ function OrdersContent() {
   }, [user])
 
   useEffect(() => {
-    const unsubscribe = subscribeToOrders((event) => {
+    // Prefer bot websocket order events; fallback to internal realtime if present
+    const unsubscribeBot = subscribeToOrderEvents?.((payload: any) => {
+      try {
+        const order = payload?.order || payload
+        if (!order?.id) return
+        setOrders((prev) => {
+          const next = [...prev]
+          const idx = next.findIndex((o) => o.id === order.id)
+          if (idx >= 0) {
+            next[idx] = { ...next[idx], ...order }
+          } else {
+            next.unshift(order)
+          }
+          return next
+        })
+        void fetchOrders(false)
+        toast.success("Order status updated in real-time")
+      } catch (error) {
+        console.error("Bot order handler failed", error)
+      }
+    })
+
+    const unsubscribeInternal = subscribeToOrders((event) => {
       try {
         const incoming: any = event.order || event.payload || event
         if (!incoming?.id) {
@@ -166,9 +191,10 @@ function OrdersContent() {
     })
 
     return () => {
-      unsubscribe()
+      unsubscribeInternal()
+      unsubscribeBot && unsubscribeBot()
     }
-  }, [subscribeToOrders])
+  }, [subscribeToOrders, subscribeToOrderEvents])
 
   const filteredOrders = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
@@ -422,6 +448,19 @@ function OrdersContent() {
                       <span>{selectedOrder.meta.delivery_address}</span>
                     </div>
                   ) : null}
+                  {selectedOrder.meta?.payment_link ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <DollarSign className="h-4 w-4" />
+                      <a 
+                        href={selectedOrder.meta.payment_link} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        View Payment Link
+                      </a>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="space-y-3">
@@ -443,6 +482,39 @@ function OrdersContent() {
                   <span className="font-medium">Total</span>
                   <span>{formatCurrency(selectedOrder.totalCents, selectedOrder.currency)}</span>
                 </div>
+
+                {/* Payment Information */}
+                {selectedOrder.meta?.payment_status && (
+                  <div className="border-t pt-4">
+                    <h3 className="text-sm font-medium mb-2">Payment Information</h3>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="text-muted-foreground">Status</span>
+                        <Badge className={
+                          selectedOrder.meta.payment_status === "PAID" 
+                            ? "bg-green-100 text-green-800"
+                            : selectedOrder.meta.payment_status === "FAILED"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-yellow-100 text-yellow-800"
+                        }>
+                          {selectedOrder.meta.payment_status}
+                        </Badge>
+                      </div>
+                      {selectedOrder.meta.payment_method && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Method</span>
+                          <span>{selectedOrder.meta.payment_method}</span>
+                        </div>
+                      )}
+                      {selectedOrder.meta.payment_transaction_id && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-muted-foreground">Transaction ID</span>
+                          <span className="font-mono text-xs">{selectedOrder.meta.payment_transaction_id}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           ) : null}
@@ -463,9 +535,11 @@ export default function OrdersPage() {
   return (
     <AuthGuard>
       <DashboardLayout>
-        <RealtimeProvider>
-          <OrdersContent />
-        </RealtimeProvider>
+        <BotWebSocketProvider>
+          <RealtimeProvider>
+            <OrdersContent />
+          </RealtimeProvider>
+        </BotWebSocketProvider>
       </DashboardLayout>
     </AuthGuard>
   )

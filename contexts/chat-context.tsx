@@ -18,7 +18,7 @@ interface Conversation {
   id: string
   customerWa: string
   customerName?: string | null
-  status: "OPEN" | "CLOSED"
+  status: "active" | "closed"
   lastMessageAt: string
   unreadCount: number
 }
@@ -164,7 +164,10 @@ const ChatContext = createContext<ChatContextValue | null>(null)
 function normalizeConversation(data: any): Conversation {
   const customerWa: string = data.customerWa || data.customer_wa || data.customerPhone || data.customer_phone || ""
   const lastMessageAt: string = data.lastMessageAt || data.last_message_at || new Date().toISOString()
-  const status: "OPEN" | "CLOSED" = (data.status || "OPEN").toUpperCase() === "CLOSED" ? "CLOSED" : "OPEN"
+  // Map various status formats to the database enum values: "active" | "closed"
+  const rawStatus = (data.status || "active").toLowerCase()
+  const status: "active" | "closed" = 
+    rawStatus === "closed" || rawStatus === "inactive" ? "closed" : "active"
   const unreadCount: number = typeof data.unreadCount === "number" ? data.unreadCount : data.unread_count ?? 0
   return {
     id: data.id,

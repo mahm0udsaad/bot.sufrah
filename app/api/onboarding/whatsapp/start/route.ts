@@ -162,7 +162,8 @@ export async function POST(request: Request) {
     console.log(`[WhatsApp Start] ✓ Account SID: ${accountSid}`)
     console.log(`[WhatsApp Start] ✓ WABA ID: ${wabaId}`)
 
-    const normalizedPhone = phone.trim()
+    // Normalize: ensure leading plus for E.164
+    const normalizedPhone = phone.trim().startsWith("+") ? phone.trim() : `+${phone.trim()}`
     const displayName = profileInput?.name || restaurant.name || `Restaurant ${restaurant.id}`
     console.log(`[WhatsApp Start] Display name: ${displayName}`)
 
@@ -272,36 +273,37 @@ export async function POST(request: Request) {
     }
 
     console.log("\n========== [WhatsApp Start] Step 6: Save to Database ==========")
-    const bot = await prisma.restaurantBot.upsert({
+    // Use findFirst + update/create pattern to avoid issues with nullable unique fields in upsert
+    const existingBotRecord = await prisma.restaurantBot.findFirst({
       where: { restaurantId: restaurant.id },
-      update: {
-        accountSid,
-        name: displayName,
-        restaurantName: restaurant.name,
-        subaccountSid: accountSid,
-        authToken,
-        whatsappNumber: normalizedPhone,
-        senderSid: senderData.sid,
-        verificationSid: verificationSid,
-        wabaId: wabaId,
-        status: "VERIFYING",
-        verifiedAt: null,
-        errorMessage: null,
-      },
-      create: {
-        restaurantId: restaurant.id,
-        accountSid,
-        name: displayName,
-        restaurantName: restaurant.name,
-        subaccountSid: accountSid,
-        authToken,
-        whatsappNumber: normalizedPhone,
-        senderSid: senderData.sid,
-        verificationSid: verificationSid,
-        wabaId: wabaId,
-        status: "VERIFYING",
-      },
     })
+
+    const botData = {
+      accountSid,
+      name: displayName,
+      restaurantName: restaurant.name,
+      subaccountSid: accountSid,
+      authToken,
+      whatsappNumber: normalizedPhone,
+      senderSid: senderData.sid,
+      verificationSid: verificationSid,
+      wabaId: wabaId,
+      status: "VERIFYING" as const,
+      verifiedAt: null,
+      errorMessage: null,
+    }
+
+    const bot = existingBotRecord
+      ? await prisma.restaurantBot.update({
+          where: { id: existingBotRecord.id },
+          data: botData,
+        })
+      : await prisma.restaurantBot.create({
+          data: {
+            ...botData,
+            restaurantId: restaurant.id,
+          },
+        })
     console.log(`[WhatsApp Start] ✓ Bot saved to database: ${bot.id}`)
     console.log(`[WhatsApp Start] ✓ Status: ${bot.status}`)
 

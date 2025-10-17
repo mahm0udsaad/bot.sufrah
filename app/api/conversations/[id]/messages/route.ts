@@ -1,38 +1,64 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { jwtVerify } from "jose"
 import { db } from "@/lib/db"
 
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
+const PAT = process.env.BOT_API_TOKEN
 
-async function getUserFromToken(request: NextRequest) {
+function extractToken(headerValue: string | null): string | null {
+  if (!headerValue) return null
+  const trimmed = headerValue.trim()
+  if (trimmed.toLowerCase().startsWith("bearer ")) {
+    return trimmed.slice(7).trim()
+  }
+  if (trimmed.toLowerCase().startsWith("apitoken ")) {
+    return trimmed.slice(9).trim()
+  }
+  return trimmed
+}
+
+async function resolveRestaurantId(request: NextRequest): Promise<string | null> {
+  // 1) Try Personal Access Token from headers
   try {
-    const cookieStore = await cookies()
-    const token = cookieStore.get("auth-token")?.value
+    const authHeader = request.headers.get("authorization") || request.headers.get("Authorization")
+    const apiKeyHeader = request.headers.get("x-api-key") || request.headers.get("X-API-Key") || request.headers.get("x-api-token")
+    const provided = extractToken(authHeader) || extractToken(apiKeyHeader)
 
-    if (!token) {
+    if (provided && PAT && provided === PAT) {
+      const rid = request.headers.get("x-restaurant-id") || request.headers.get("X-Restaurant-Id")
+      if (rid && rid.trim().length > 0) {
+        return rid.trim()
+      }
       return null
     }
+  } catch {
+    // fall through
+  }
 
-    const { payload } = await jwtVerify(token, JWT_SECRET)
-    return payload.userId as string
-  } catch (error) {
+  // 2) Fallback: existing cookie session via user phone -> primary restaurant
+  try {
+    const cookieStore = await cookies()
+    const userPhone = cookieStore.get("user-phone")?.value
+    if (!userPhone) return null
+    const user = await db.getUserByPhone(userPhone)
+    if (!user) return null
+    const restaurant = await db.getPrimaryRestaurantByUserId(user.id)
+    return restaurant?.id ?? null
+  } catch {
     return null
   }
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const userId = await getUserFromToken(request)
+    const restaurantId = await resolveRestaurantId(request)
     const { id } = await params
 
-    if (!userId) {
+    if (!restaurantId) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify user owns this conversation
-    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
-
+    // Verify restaurant owns this conversation
+    const restaurant = await db.getRestaurantById(restaurantId)
     if (!restaurant) {
       return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
     }
@@ -53,10 +79,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const userId = await getUserFromToken(request)
+    const restaurantId = await resolveRestaurantId(request)
     const { id } = await params
 
-    if (!userId) {
+    if (!restaurantId) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
@@ -66,9 +92,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, message: "Content and sender_type are required" }, { status: 400 })
     }
 
-    // Verify user owns this conversation
-    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
-
+    // Verify restaurant owns this conversation
+    const restaurant = await db.getRestaurantById(restaurantId)
     if (!restaurant) {
       return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
     }

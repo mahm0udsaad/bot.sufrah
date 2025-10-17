@@ -5,10 +5,11 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Send, Image, FileText, Mic, MapPin, Loader2, Phone, User } from "lucide-react"
+import { Send, Image, FileText, Mic, MapPin, Loader2, Phone, User, Paperclip, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format, isToday, isYesterday } from "date-fns"
 import { ar } from "date-fns/locale"
+import { toast } from "sonner"
 
 interface BotConversation {
   id: string
@@ -38,10 +39,14 @@ interface MessageThreadProps {
   loading: boolean
   sending: boolean
   onSendMessage: (text: string) => void
+  onSendMedia?: (file: File, caption?: string) => Promise<void>
 }
 
-export function MessageThread({ conversation, messages, loading, sending, onSendMessage }: MessageThreadProps) {
+export function MessageThread({ conversation, messages, loading, sending, onSendMessage, onSendMedia }: MessageThreadProps) {
   const [messageText, setMessageText] = useState("")
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
@@ -67,7 +72,27 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
     setShouldAutoScroll(isNearBottom)
   }
 
-  const handleSend = () => {
+  const handleSend = async () => {
+    if (uploading) return
+
+    // Send media if file is selected
+    if (selectedFile && onSendMedia) {
+      try {
+        setUploading(true)
+        await onSendMedia(selectedFile, messageText || undefined)
+        setSelectedFile(null)
+        setMessageText("")
+        toast.success("تم إرسال الملف بنجاح")
+      } catch (error) {
+        console.error("Failed to send media:", error)
+        toast.error("فشل إرسال الملف")
+      } finally {
+        setUploading(false)
+      }
+      return
+    }
+
+    // Send text message
     if (!messageText.trim() || sending) return
     onSendMessage(messageText)
     setMessageText("")
@@ -78,6 +103,45 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
       e.preventDefault()
       handleSend()
     }
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    // Validate file size (max 16MB)
+    const maxSize = 16 * 1024 * 1024
+    if (file.size > maxSize) {
+      toast.error("حجم الملف كبير جداً. الحد الأقصى 16 ميجابايت")
+      return
+    }
+
+    // Validate file type
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+    ]
+
+    if (!allowedTypes.includes(file.type)) {
+      toast.error("نوع الملف غير مدعوم")
+      return
+    }
+
+    setSelectedFile(file)
+    // Clear the input so the same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+  }
+
+  const clearSelectedFile = () => {
+    setSelectedFile(null)
   }
 
   const formatMessageTime = (timestamp: string) => {
@@ -125,6 +189,24 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
               alt="رسالة صورة"
               className="rounded-lg max-w-sm w-full h-auto"
             />
+            {message.content && <p>{message.content}</p>}
+          </div>
+        )
+      } else if (message.message_type === "video") {
+        return (
+          <div className="space-y-2">
+            <video controls className="rounded-lg max-w-sm w-full h-auto">
+              <source src={message.media_url} />
+            </video>
+            {message.content && <p>{message.content}</p>}
+          </div>
+        )
+      } else if (message.message_type === "audio") {
+        return (
+          <div className="space-y-2">
+            <audio controls className="w-full">
+              <source src={message.media_url} />
+            </audio>
             {message.content && <p>{message.content}</p>}
           </div>
         )
@@ -180,7 +262,7 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 p-4" onScrollCapture={handleScroll}>
+      <div className="overflow-y-scroll flex-1 p-4" onScrollCapture={handleScroll}>
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -193,7 +275,7 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
             </div>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="overflow-y-scroll space-y-4">
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -228,35 +310,92 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
             <div ref={messagesEndRef} />
           </div>
         )}
-      </ScrollArea>
+      </div>
 
       {/* Input */}
       <div className="p-4 border-t">
+        {/* File Preview */}
+        {selectedFile && (
+          <div className="mb-3 p-3 bg-muted rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              {selectedFile.type.startsWith("image/") ? (
+                <Image className="h-5 w-5 text-primary flex-shrink-0" />
+              ) : (
+                <FileText className="h-5 w-5 text-primary flex-shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{selectedFile.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {(selectedFile.size / 1024).toFixed(1)} KB
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={clearSelectedFile}
+              disabled={uploading}
+              className="flex-shrink-0"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
         <div className="flex gap-2">
+          <div className="flex flex-col gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending || uploading}
+              title="إرفاق ملف"
+            >
+              <Paperclip className="h-5 w-5" />
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf,.doc,.docx,.txt"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+          </div>
+          
           <Textarea
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="اكتب رسالتك..."
+            placeholder={selectedFile ? "تعليق اختياري..." : "اكتب رسالتك..."}
             className="resize-none min-h-[60px] max-h-[120px]"
-            disabled={sending}
+            disabled={sending || uploading}
           />
+          
           <Button
             onClick={handleSend}
-            disabled={!messageText.trim() || sending}
+            disabled={(!messageText.trim() && !selectedFile) || sending || uploading}
             size="icon"
             className="h-[60px] w-[60px] flex-shrink-0"
           >
-            {sending ? (
+            {(sending || uploading) ? (
               <Loader2 className="h-5 w-5 animate-spin" />
             ) : (
               <Send className="h-5 w-5" />
             )}
           </Button>
         </div>
+        
         <p className="text-xs text-muted-foreground mt-2">
-          اضغط Enter للإرسال، Shift+Enter لسطر جديد
+          {selectedFile 
+            ? `جاهز للإرسال: ${selectedFile.name}`
+            : "اضغط Enter للإرسال، Shift+Enter لسطر جديد"}
         </p>
+        
+        {onSendMedia && (
+          <p className="text-xs text-muted-foreground mt-1">
+            يمكنك إرفاق صور أو مستندات (حتى 16 ميجابايت)
+          </p>
+        )}
       </div>
     </div>
   )

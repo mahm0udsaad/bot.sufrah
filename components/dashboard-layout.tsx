@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useMemo, useState } from "react"
 import { usePathname } from "next/navigation"
-import { Bell, Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X } from "lucide-react"
+import { Bell, Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X, Bot, ScrollText, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -17,9 +17,15 @@ const NAV_ITEMS = [
   { name: "Chats", href: "/chats", icon: MessageSquare },
   { name: "Orders", href: "/orders", icon: Package },
   { name: "Catalog", href: "/catalog", icon: Store },
+  { name: "Bot Management", href: "/bot-management", icon: Bot },
+  { name: "Logs", href: "/logs", icon: ScrollText },
   { name: "Usage & Plan", href: "/usage", icon: BarChart3 },
   { name: "Templates", href: "/templates", icon: FileText },
   { name: "Settings", href: "/settings", icon: Settings },
+]
+
+const ADMIN_NAV_ITEMS = [
+  { name: "Admin Bots", href: "/admin/bots", icon: Shield },
 ]
 
 interface DashboardLayoutProps {
@@ -31,6 +37,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const { user } = useAuth()
   const restaurantName = user?.restaurant?.name || "Sufrah Bot"
   const pathname = usePathname()
+  
+  // Check if user is admin - adjust this to include your admin users
+  const isAdmin = true // Temporarily allow all logged-in users for testing
+  // TODO: Update this with proper admin check:
+  // const isAdmin = user?.email?.includes('admin') || user?.phone_number === '+966500000000'
 
   const navigation = useMemo(
     () =>
@@ -39,6 +50,17 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           pathname === item.href ||
           (item.href !== "/" && pathname?.startsWith(`${item.href}/`)) ||
           (item.href === "/" && pathname === item.href)
+        return { ...item, isActive }
+      }),
+    [pathname],
+  )
+  
+  const adminNavigation = useMemo(
+    () =>
+      ADMIN_NAV_ITEMS.map((item) => {
+        const isActive =
+          pathname === item.href ||
+          (item.href !== "/" && pathname?.startsWith(`${item.href}/`))
         return { ...item, isActive }
       }),
     [pathname],
@@ -78,6 +100,30 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   {item.name}
                 </a>
               ))}
+              
+              {isAdmin && (
+                <>
+                  <div className="my-4 border-t border-sidebar-border" />
+                  <div className="px-3 py-2 text-xs font-semibold text-sidebar-foreground/60 uppercase">
+                    Admin
+                  </div>
+                  {adminNavigation.map((item) => (
+                    <a
+                      key={item.name}
+                      href={item.href}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors mb-1",
+                        item.isActive
+                          ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      )}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      {item.name}
+                    </a>
+                  ))}
+                </>
+              )}
             </nav>
             <div className="absolute bottom-0 left-0 right-0 border-t border-sidebar-border p-4 bg-sidebar">
               <SignOutButton variant="ghost" size="sm" className="w-full justify-start" />
@@ -113,6 +159,32 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   </a>
                 </li>
               ))}
+              
+              {isAdmin && (
+                <>
+                  <li className="my-3 border-t border-sidebar-border pt-3">
+                    <div className="px-3 py-1 text-xs font-semibold text-sidebar-foreground/60 uppercase">
+                      Admin
+                    </div>
+                  </li>
+                  {adminNavigation.map((item) => (
+                    <li key={item.name}>
+                      <a
+                        href={item.href}
+                        className={cn(
+                          "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                          item.isActive
+                            ? "bg-sidebar-primary text-sidebar-primary-foreground"
+                            : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                        )}
+                      >
+                        <item.icon className="h-4 w-4 shrink-0" />
+                        {item.name}
+                      </a>
+                    </li>
+                  ))}
+                </>
+              )}
             </ul>
           </nav>
           <div className="mt-auto border-t border-sidebar-border pt-4">

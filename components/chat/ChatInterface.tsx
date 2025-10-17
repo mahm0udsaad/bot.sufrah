@@ -5,8 +5,11 @@ import { useBotWebSocket } from "@/contexts/bot-websocket-context"
 import { ConversationList } from "./ConversationList"
 import { MessageThread } from "./MessageThread"
 import { BotToggle } from "./BotToggle"
+import { OrderTracker } from "./OrderTracker"
+import { BotStatusIndicator } from "./BotStatusIndicator"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { AlertCircle, RefreshCw } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
@@ -32,6 +35,7 @@ export function ChatInterface() {
     fetchConversations,
     fetchMessages,
     sendMessage,
+    sendMedia,
     reconnect,
   } = useBotWebSocket()
 
@@ -81,6 +85,34 @@ export function ChatInterface() {
       console.error("Failed to send message:", err)
     } finally {
       setSendingMessage(false)
+    }
+  }
+
+  // Handle sending media
+  const handleSendMedia = async (file: File, caption?: string) => {
+    if (!selectedConversationId) return
+    await sendMedia(selectedConversationId, file, caption)
+    // Message will arrive via WebSocket message.created
+  }
+
+  // Handle bot toggle for individual conversations
+  const handleToggleConversationBot = async (conversationId: string, enabled: boolean) => {
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}/toggle-bot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to toggle bot for conversation")
+      }
+
+      // The conversation will be updated via WebSocket events
+      // No need to manually update state here
+    } catch (error) {
+      console.error("Failed to toggle conversation bot:", error)
+      throw error
     }
   }
 
@@ -171,14 +203,18 @@ export function ChatInterface() {
         </Alert>
       )}
 
+      {/* Bot Status Overview */}
+      <BotStatusIndicator variant="compact" className="lg:hidden" />
+
       {/* Chat Interface */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 min-h-0">
         {/* Conversation List */}
         <Card className="lg:col-span-1 overflow-hidden flex flex-col">
           <ConversationList
             conversations={conversations}
             selectedId={selectedConversationId}
             onSelect={handleSelectConversation}
+            onToggleBot={handleToggleConversationBot}
           />
         </Card>
 
@@ -187,10 +223,11 @@ export function ChatInterface() {
           {selectedConversation ? (
             <MessageThread
               conversation={selectedConversation}
-              messages={messages[selectedConversationId] || []}
+              messages={messages[selectedConversation.id] || []}
               loading={loadingMessages}
               sending={sendingMessage}
               onSendMessage={handleSendMessage}
+              onSendMedia={handleSendMedia}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -205,7 +242,20 @@ export function ChatInterface() {
             </div>
           )}
         </Card>
+
+        {/* Right Sidebar: Bot Status & Orders */}
+        <div className="lg:col-span-1 space-y-4 hidden lg:block">
+          <BotStatusIndicator />
+          <OrderTracker conversationId={selectedConversationId} />
+        </div>
       </div>
+
+      {/* Mobile Order Tracker */}
+      {selectedConversationId && (
+        <div className="lg:hidden">
+          <OrderTracker conversationId={selectedConversationId} />
+        </div>
+      )}
     </div>
   )
 }

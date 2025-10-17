@@ -1,5 +1,5 @@
-const BOT_API_URL = "https://bot.sufrah.sa"
-const BOT_API_TOKEN = process.env.BOT_API_TOKEN || "your-personal-token-here"
+const BOT_API_URL = process.env.NEXT_PUBLIC_BOT_API_URL || process.env.BOT_API_URL || "https://bot.sufrah.sa/api"
+const BOT_API_TOKEN = process.env.BOT_API_TOKEN || ""
 
 const API_CACHE = new Map<string, { data: any; timestamp: number }>()
 const CACHE_DURATION = 30000 // 30 seconds
@@ -14,6 +14,29 @@ function getCachedData(key: string) {
 
 function setCachedData(key: string, data: any) {
   API_CACHE.set(key, { data, timestamp: Date.now() })
+}
+
+/**
+ * Generate authentication headers for database-backed API calls
+ * Uses Bearer token and restaurant ID for multi-tenancy
+ */
+function getAuthHeaders(restaurantId?: string): HeadersInit {
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+    "ngrok-skip-browser-warning": "true",
+  }
+
+  // Use Bearer token authentication as per new spec
+  if (BOT_API_TOKEN) {
+    headers["Authorization"] = `Bearer ${BOT_API_TOKEN}`
+  }
+
+  // Add restaurant ID for multi-tenancy support
+  if (restaurantId) {
+    headers["X-Restaurant-Id"] = restaurantId
+  }
+
+  return headers
 }
 
 export interface BotMessage {
@@ -35,23 +58,30 @@ export interface BotConversation {
   status: "active" | "closed"
   last_message_at: string
   unread_count: number
+  is_bot_active: boolean
 }
 
-export async function fetchBotConversations(): Promise<BotConversation[]> {
-  const cacheKey = "conversations"
+/**
+ * Fetch conversations from DATABASE (not in-memory cache)
+ * This ensures data persists across server restarts
+ */
+export async function fetchBotConversations(restaurantId?: string): Promise<BotConversation[]> {
+  const cacheKey = `conversations-${restaurantId || "default"}`
   const cached = getCachedData(cacheKey)
   if (cached) {
-    console.log("[v0] Using cached conversations data")
+    console.log("[bot-api] Using cached conversations data")
     return cached
   }
 
   try {
-    const response = await fetch(`${BOT_API_URL}/api/conversations`, {
-      headers: {
-        "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
-        Authorization: `Bearer ${BOT_API_TOKEN}`,
-      },
+    // ✅ USE DATABASE-BACKED API: /api/db/conversations
+    const params = new URLSearchParams({
+      status: "active",
+      limit: "50",
+    })
+
+    const response = await fetch(`${BOT_API_URL}/db/conversations?${params}`, {
+      headers: getAuthHeaders(restaurantId),
     })
 
     if (!response.ok) {
@@ -59,75 +89,81 @@ export async function fetchBotConversations(): Promise<BotConversation[]> {
     }
 
     const data = await response.json()
-    setCachedData(cacheKey, data)
-    return data
-  } catch (error) {
-    console.log("[v0] Bot API error, using fallback:", error.message)
-    const fallbackData = cached || [
-      {
-        id: "966562897103",
-        customer_phone: "966562897103",
-        customer_name: "Sufrah",
-        status: "active",
-        last_message_at: new Date().toISOString(),
-        unread_count: 0,
-      },
-    ]
-    return fallbackData
+    
+    // Normalize database response to match expected format
+    const normalized = (Array.isArray(data) ? data : []).map((conv: any) => ({
+      id: conv.id,
+      customer_phone: conv.customerPhone || conv.customer_phone || conv.customerWa,
+      customer_name: conv.customerName || conv.customer_name,
+      status: conv.status || "active",
+      last_message_at: conv.lastMessageAt || conv.last_message_at || new Date().toISOString(),
+      unread_count: conv.unreadCount ?? conv.unread_count ?? 0,
+      is_bot_active: conv.isBotActive ?? conv.is_bot_active ?? true,
+    }))
+    
+    setCachedData(cacheKey, normalized)
+    return normalized
+  } catch (error: any) {
+    console.error("[bot-api] Failed to fetch conversations from database:", error.message)
+    // Return empty array instead of fallback data to avoid confusion
+    return cached || []
   }
 }
 
-export async function fetchBotMessages(conversationId: string): Promise<BotMessage[]> {
+/**
+ * Fetch messages from DATABASE (not in-memory cache)
+ * This ensures message history persists across server restarts
+ */
+export async function fetchBotMessages(conversationId: string, restaurantId?: string): Promise<BotMessage[]> {
   const cacheKey = `messages-${conversationId}`
   const cached = getCachedData(cacheKey)
   if (cached) {
-    console.log(`[v0] Using cached messages data for ${conversationId}`)
+    console.log(`[bot-api] Using cached messages data for ${conversationId}`)
     return cached
   }
 
   try {
-    const response = await fetch(`${BOT_API_URL}/api/conversations/${conversationId}/messages`, {
-      headers: {
-        "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
-        Authorization: `Bearer ${BOT_API_TOKEN}`,
-      },
-    })
+    // ✅ USE DATABASE-BACKED API: /api/db/conversations/:id/messages
+    const params = new URLSearchParams({ limit: "100" })
+    
+    const response = await fetch(
+      `${BOT_API_URL}/db/conversations/${encodeURIComponent(conversationId)}/messages?${params}`,
+      { headers: getAuthHeaders(restaurantId) }
+    )
 
     if (!response.ok) {
       throw new Error(`Bot API error: ${response.status}`)
     }
 
     const data = await response.json()
-    setCachedData(cacheKey, data)
-    return data
-  } catch (error) {
-    console.log(`[v0] Bot API error, using fallback for ${conversationId}:`, error.message)
-    const fallbackData = cached || [
-      {
-        id: "1",
-        conversation_id: conversationId,
-        from_phone: "966562897103",
-        to_phone: "966508034010",
-        message_type: "text",
-        content: "مرحبا، أريد طلب طعام",
-        timestamp: new Date(Date.now() - 300000).toISOString(),
-        is_from_customer: true,
-      },
-    ]
-    return fallbackData
+    
+    // Normalize database response to match expected format
+    const normalized = (Array.isArray(data) ? data : []).map((msg: any) => ({
+      id: msg.id,
+      conversation_id: msg.conversationId || msg.conversation_id || conversationId,
+      from_phone: msg.fromPhone || msg.from_phone || "",
+      to_phone: msg.toPhone || msg.to_phone || "",
+      message_type: msg.messageType || msg.message_type || "text",
+      content: msg.content || msg.body || "",
+      media_url: msg.mediaUrl || msg.media_url,
+      timestamp: msg.createdAt || msg.timestamp || new Date().toISOString(),
+      is_from_customer: msg.direction === "IN" || msg.is_from_customer,
+    }))
+    
+    setCachedData(cacheKey, normalized)
+    return normalized
+  } catch (error: any) {
+    console.error(`[bot-api] Failed to fetch messages from database for ${conversationId}:`, error.message)
+    // Return empty array instead of fallback data
+    return cached || []
   }
 }
 
-export async function sendBotMessage(conversationId: string, message: string): Promise<boolean> {
+export async function sendBotMessage(conversationId: string, message: string, restaurantId?: string): Promise<boolean> {
   try {
     const response = await fetch(`${BOT_API_URL}/api/conversations/${conversationId}/send`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
-        Authorization: `Bearer ${BOT_API_TOKEN}`,
-      },
+      headers: getAuthHeaders(restaurantId),
       body: JSON.stringify({ message }),
     })
 
@@ -138,21 +174,56 @@ export async function sendBotMessage(conversationId: string, message: string): P
   }
 }
 
-export async function toggleBotStatus(enabled: boolean): Promise<boolean> {
+export async function sendBotMedia(
+  conversationId: string,
+  mediaUrl: string,
+  caption?: string,
+  restaurantId?: string
+): Promise<boolean> {
+  try {
+    const response = await fetch(`${BOT_API_URL}/api/conversations/${conversationId}/send-media`, {
+      method: "POST",
+      headers: getAuthHeaders(restaurantId),
+      body: JSON.stringify({ mediaUrl, caption }),
+    })
+
+    return response.ok
+  } catch (error) {
+    console.error("Failed to send bot media:", error)
+    return false
+  }
+}
+
+export async function toggleBotStatus(enabled: boolean, restaurantId?: string): Promise<boolean> {
   try {
     const response = await fetch(`${BOT_API_URL}/api/bot/toggle`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "ngrok-skip-browser-warning": "true",
-        Authorization: `Bearer ${BOT_API_TOKEN}`,
-      },
+      headers: getAuthHeaders(restaurantId),
       body: JSON.stringify({ enabled }),
     })
 
     return response.ok
   } catch (error) {
     console.error("Failed to toggle bot status:", error)
+    return false
+  }
+}
+
+export async function toggleConversationBot(
+  conversationId: string,
+  enabled: boolean,
+  restaurantId?: string
+): Promise<boolean> {
+  try {
+    const response = await fetch(`${BOT_API_URL}/api/conversations/${conversationId}/toggle-bot`, {
+      method: "POST",
+      headers: getAuthHeaders(restaurantId),
+      body: JSON.stringify({ enabled }),
+    })
+
+    return response.ok
+  } catch (error) {
+    console.error("Failed to toggle conversation bot:", error)
     return false
   }
 }

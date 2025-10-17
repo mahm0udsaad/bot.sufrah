@@ -4,10 +4,13 @@ import { useState } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Search, MessageCircle, Bot, User } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
+import { Search, MessageCircle, Bot, User, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatDistanceToNow } from "date-fns"
 import { ar } from "date-fns/locale"
+import { toast } from "sonner"
 
 interface BotConversation {
   id: string
@@ -23,17 +26,18 @@ interface ConversationListProps {
   conversations: BotConversation[]
   selectedId: string | null
   onSelect: (id: string) => void
+  onToggleBot?: (conversationId: string, enabled: boolean) => Promise<void>
 }
 
-export function ConversationList({ conversations, selectedId, onSelect }: ConversationListProps) {
+export function ConversationList({ conversations, selectedId, onSelect, onToggleBot }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState("")
+  const [togglingConversations, setTogglingConversations] = useState<Set<string>>(new Set())
 
   const filteredConversations = conversations.filter((conv) => {
     const query = searchQuery.toLowerCase()
-    return (
-      conv.customer_name.toLowerCase().includes(query) ||
-      conv.customer_phone.includes(query)
-    )
+    const name = (conv.customer_name || "").toLowerCase()
+    const phone = conv.customer_phone || ""
+    return name.includes(query) || phone.includes(query)
   })
 
   const formatTimeAgo = (timestamp: string) => {
@@ -41,6 +45,26 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
       return formatDistanceToNow(new Date(timestamp), { addSuffix: true, locale: ar })
     } catch {
       return timestamp
+    }
+  }
+
+  const handleToggleBot = async (conversationId: string, enabled: boolean) => {
+    if (!onToggleBot) return
+
+    setTogglingConversations((prev) => new Set([...prev, conversationId]))
+    
+    try {
+      await onToggleBot(conversationId, enabled)
+      toast.success(enabled ? "تم تشغيل البوت للمحادثة" : "تم إيقاف البوت للمحادثة")
+    } catch (error) {
+      console.error("Failed to toggle bot:", error)
+      toast.error("فشل تغيير حالة البوت")
+    } finally {
+      setTogglingConversations((prev) => {
+        const next = new Set(prev)
+        next.delete(conversationId)
+        return next
+      })
     }
   }
 
@@ -119,19 +143,39 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
                       </p>
                     </div>
 
-                    {/* Status indicators */}
-                    <div className="flex items-center gap-2 mt-2">
-                      <Badge
-                        variant={conversation.status === "active" ? "default" : "secondary"}
-                        className="text-xs"
-                      >
-                        {conversation.status === "active" ? "نشط" : "مغلق"}
-                      </Badge>
-                      {conversation.is_bot_active && (
-                        <Badge variant="outline" className="text-xs gap-1">
-                          <Bot className="h-3 w-3" />
-                          بوت
+                    {/* Status indicators and bot toggle */}
+                    <div className="flex items-center justify-between gap-2 mt-2">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={conversation.status === "active" ? "default" : "secondary"}
+                          className="text-xs"
+                        >
+                          {conversation.status === "active" ? "نشط" : "مغلق"}
                         </Badge>
+                        <Badge 
+                          variant={conversation.is_bot_active ? "outline" : "secondary"} 
+                          className="text-xs gap-1"
+                        >
+                          <Bot className="h-3 w-3" />
+                          {conversation.is_bot_active ? "بوت نشط" : "بوت متوقف"}
+                        </Badge>
+                      </div>
+                      
+                      {onToggleBot && (
+                        <div 
+                          className="flex items-center gap-1 pr-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {togglingConversations.has(conversation.id) ? (
+                            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                          ) : (
+                            <Switch
+                              checked={conversation.is_bot_active}
+                              onCheckedChange={(enabled) => handleToggleBot(conversation.id, enabled)}
+                              disabled={togglingConversations.has(conversation.id)}
+                            />
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

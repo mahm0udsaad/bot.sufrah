@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { TemplateMessage } from "./TemplateMessage"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -31,6 +32,22 @@ interface BotMessage {
   media_url: string | null
   timestamp: string
   is_from_customer: boolean
+  content_sid?: string
+  variables?: Record<string, string>
+  template_preview?: {
+    sid: string
+    friendlyName: string
+    language: string
+    body: string
+    contentType: "text" | "quick-reply" | "card" | "list-picker" | string
+    buttons: Array<{
+      type: "QUICK_REPLY" | "URL" | "PHONE_NUMBER" | "COPY_CODE" | string
+      title: string
+      id?: string
+      url?: string
+      phone_number?: string
+    }>
+  }
 }
 
 interface MessageThreadProps {
@@ -169,6 +186,24 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
   }
 
   const renderMessageContent = (message: BotMessage) => {
+    // Render WhatsApp template preview
+    if (message.message_type === "template" && message.template_preview) {
+      return (
+        <TemplateMessage
+          template={{
+            sid: message.template_preview.sid,
+            friendlyName: message.template_preview.friendlyName,
+            language: message.template_preview.language,
+            body: message.template_preview.body,
+            contentType: message.template_preview.contentType,
+            buttons: message.template_preview.buttons || [],
+          }}
+          createdAt={message.timestamp}
+          direction={message.is_from_customer ? "in" : "out"}
+        />
+      )
+    }
+
     // Handle location messages
     if (message.content.startsWith("📍")) {
       return (

@@ -1,10 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { jwtVerify } from "jose"
+import { getAuthenticatedRestaurant } from "@/lib/server-auth"
 import { z } from "zod"
 import { db } from "@/lib/db"
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
 
 const payloadSchema = z.object({
   restaurantId: z.string().min(1),
@@ -13,27 +10,11 @@ const payloadSchema = z.object({
   mediaUrl: z.string().url().optional(),
 })
 
-async function getUserIdFromToken(request: NextRequest) {
-  try {
-    const cookieStore = await cookies()
-    const token = cookieStore.get("auth-token")?.value
-
-    if (!token) {
-      return null
-    }
-
-    const { payload } = await jwtVerify(token, JWT_SECRET)
-    return payload.userId as string
-  } catch {
-    return null
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getUserIdFromToken(request)
+    const restaurant = await getAuthenticatedRestaurant(request)
 
-    if (!userId) {
+    if (!restaurant) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
@@ -46,9 +27,7 @@ export async function POST(request: NextRequest) {
 
     const { restaurantId, conversationId, text, mediaUrl } = parsed.data
 
-    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
-
-    if (!restaurant || restaurant.id !== restaurantId) {
+    if (restaurant.id !== restaurantId) {
       return NextResponse.json({ success: false, message: "Restaurant mismatch" }, { status: 403 })
     }
 

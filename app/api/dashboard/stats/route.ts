@@ -1,39 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { jwtVerify } from "jose"
-import { db } from "@/lib/db"
+import { getAuthenticatedRestaurant, getAuthenticatedUser } from "@/lib/server-auth"
 import prisma from "@/lib/prisma"
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
-
-async function getUserFromToken(request: NextRequest) {
-  try {
-    const cookieStore = await cookies()
-    const token = cookieStore.get("auth-token")?.value
-
-    if (!token) {
-      return null
-    }
-
-    const { payload } = await jwtVerify(token, JWT_SECRET)
-    return payload.userId as string
-  } catch (error) {
-    return null
-  }
-}
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getUserFromToken(request)
+    const [restaurant, user] = await Promise.all([
+      getAuthenticatedRestaurant(request),
+      getAuthenticatedUser(request)
+    ])
 
-    if (!userId) {
+    if (!restaurant || !user) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
-    }
-
-    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
-
-    if (!restaurant) {
-      return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
     }
 
     const startOfDay = new Date()
@@ -43,7 +20,7 @@ export async function GET(request: NextRequest) {
       prisma.conversation.count({ where: { restaurantId: restaurant.id, status: "OPEN" } }),
       prisma.order.count({ where: { restaurantId: restaurant.id, createdAt: { gte: startOfDay } } }),
       prisma.message.count({ where: { restaurantId: restaurant.id, createdAt: { gte: startOfDay } } }),
-      prisma.template.count({ where: { user_id: userId, status: "approved" } }),
+      prisma.template.count({ where: { user_id: user.id, status: "approved" } }),
     ])
 
     const stats = {

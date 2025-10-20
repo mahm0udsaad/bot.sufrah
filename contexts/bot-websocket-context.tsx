@@ -25,6 +25,23 @@ interface BotMessage {
   media_url: string | null
   timestamp: string
   is_from_customer: boolean
+  // Template message support
+  content_sid?: string
+  variables?: Record<string, string>
+  template_preview?: {
+    sid: string
+    friendlyName: string
+    language: string
+    body: string
+    contentType: "text" | "quick-reply" | "card" | "list-picker" | string
+    buttons: Array<{
+      type: "QUICK_REPLY" | "URL" | "PHONE_NUMBER" | "COPY_CODE" | string
+      title: string
+      id?: string
+      url?: string
+      phone_number?: string
+    }>
+  }
 }
 
 interface BotStatusData {
@@ -162,16 +179,23 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
               // Normalize message payload to internal shape
               {
                 const m: any = message.data
+                const normalizedType =
+                  m.message_type ??
+                  m.messageType ??
+                  (m.templatePreview || m.template_preview ? "template" : (m.media_url || m.mediaUrl ? "document" : "text"))
                 const normalized: BotMessage = {
                   id: m.id,
                   conversation_id: m.conversation_id ?? m.conversationId,
                   from_phone: m.from_phone ?? m.fromPhone ?? "",
                   to_phone: m.to_phone ?? m.toPhone ?? "",
-                  message_type: m.message_type ?? m.messageType ?? (m.media_url || m.mediaUrl ? "document" : "text"),
+                  message_type: normalizedType,
                   content: m.content ?? m.body ?? "",
                   media_url: m.media_url ?? m.mediaUrl ?? null,
                   timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
                   is_from_customer: typeof m.is_from_customer === "boolean" ? m.is_from_customer : (m.direction ?? "OUT") === "IN",
+                  content_sid: m.contentSid ?? m.content_sid,
+                  variables: m.variables ?? undefined,
+                  template_preview: m.templatePreview ?? m.template_preview ?? undefined,
                 }
                 messageHandlers.current.forEach((handler) => handler(normalized))
               }
@@ -292,6 +316,39 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // Simple smoke test helper in development to preview template messages rendering
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return
+    // Trigger a mock message after mount to ensure renderer handles template preview
+    const timeout = setTimeout(() => {
+      const mockTemplateMessage: BotMessage = {
+        id: "mock-tpl-1",
+        conversation_id: "mock-conv",
+        from_phone: "",
+        to_phone: "",
+        message_type: "template",
+        content: "You have a new order made on Sufrah! 🎉",
+        media_url: null,
+        timestamp: new Date().toISOString(),
+        is_from_customer: false,
+        content_sid: "HX1234567890abcdef",
+        variables: { "1": "Restaurant Name", "2": "Customer Name" },
+        template_preview: {
+          sid: "HX1234567890abcdef",
+          friendlyName: "order_notification_with_button",
+          language: "en",
+          body: "You have a new order made on Sufrah! 🎉",
+          contentType: "quick-reply",
+          buttons: [
+            { type: "QUICK_REPLY", title: "View Order Details", id: "view_order" },
+          ],
+        },
+      }
+      messageHandlers.current.forEach((handler) => handler(mockTemplateMessage))
+    }, 0)
+    return () => clearTimeout(timeout)
+  }, [])
+
   // REST API methods - ✅ USE DATABASE-BACKED ENDPOINTS
   const fetchConversations = async (): Promise<BotConversation[]> => {
     // Fetch from database-backed API to ensure data persists across restarts
@@ -345,11 +402,17 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
         conversation_id: m.conversation_id ?? m.conversationId,
         from_phone: m.from_phone ?? m.fromPhone ?? "",
         to_phone: m.to_phone ?? m.toPhone ?? "",
-        message_type: m.message_type ?? m.messageType ?? (m.media_url || m.mediaUrl ? "document" : "text"),
+        message_type:
+          m.message_type ??
+          m.messageType ??
+          (m.templatePreview || m.template_preview ? "template" : (m.media_url || m.mediaUrl ? "document" : "text")),
         content: m.content ?? m.body ?? "",
         media_url: m.media_url ?? m.mediaUrl ?? null,
         timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
         is_from_customer: typeof m.is_from_customer === "boolean" ? m.is_from_customer : (m.direction ?? "OUT") === "IN",
+        content_sid: m.contentSid ?? m.content_sid,
+        variables: m.variables ?? undefined,
+        template_preview: m.templatePreview ?? m.template_preview ?? undefined,
       }))
     }
     const payload = await res.json()
@@ -359,11 +422,17 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
       conversation_id: m.conversation_id ?? m.conversationId,
       from_phone: m.from_phone ?? m.fromPhone ?? "",
       to_phone: m.to_phone ?? m.toPhone ?? "",
-      message_type: m.message_type ?? m.messageType ?? (m.media_url || m.mediaUrl ? "document" : "text"),
+      message_type:
+        m.message_type ??
+        m.messageType ??
+        (m.templatePreview || m.template_preview ? "template" : (m.media_url || m.mediaUrl ? "document" : "text")),
       content: m.content ?? m.body ?? "",
       media_url: m.media_url ?? m.mediaUrl ?? null,
       timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
       is_from_customer: typeof m.is_from_customer === "boolean" ? m.is_from_customer : (m.direction ?? "OUT") === "IN",
+      content_sid: m.contentSid ?? m.content_sid,
+      variables: m.variables ?? undefined,
+      template_preview: m.templatePreview ?? m.template_preview ?? undefined,
     }))
   }
 

@@ -1,61 +1,42 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { jwtVerify } from "jose"
+import { getAuthenticatedRestaurant } from "@/lib/server-auth"
 import { prisma } from "@/lib/prisma"
 
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
-
-async function getUserFromToken(request: NextRequest) {
-  try {
-    const cookieStore = await cookies()
-    const token = cookieStore.get("auth-token")?.value
-
-    if (!token) {
-      return null
-    }
-
-    const { payload } = await jwtVerify(token, JWT_SECRET)
-    return payload.userId as string
-  } catch (error) {
-    return null
-  }
-}
-
 export async function GET(request: NextRequest) {
+  console.log("[bot-management] GET request received")
+  
   try {
-    const userId = await getUserFromToken(request)
+    const restaurant = await getAuthenticatedRestaurant(request)
 
-    if (!userId) {
+    if (!restaurant) {
+      console.log("[bot-management] ❌ Authentication failed - returning 401")
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
-    // Get restaurant for this user
-    const restaurant = await prisma.restaurant.findUnique({
-      where: { userId },
-      include: {
-        bots: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
-      },
+    console.log("[bot-management] ✅ Authenticated - fetching bot for restaurant:", restaurant.id)
+
+    // Get bot for this restaurant
+    const bots = await prisma.restaurantBot.findMany({
+      where: { restaurantId: restaurant.id },
+      orderBy: { createdAt: "desc" },
+      take: 1,
     })
 
-    if (!restaurant) {
-      return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
-    }
-
-    const bot = restaurant.bots[0]
+    const bot = bots[0]
 
     if (!bot) {
+      console.log("[bot-management] ❌ No bot found for restaurant:", restaurant.id)
       return NextResponse.json({ success: false, message: "No bot configuration found" }, { status: 404 })
     }
+
+    console.log("[bot-management] ✅ Bot found - id:", bot.id, "isActive:", bot.isActive)
 
     // Return bot data (excluding sensitive auth token)
     const { authToken, ...botData } = bot
 
     return NextResponse.json({ success: true, bot: botData })
   } catch (error) {
-    console.error("Bot management API error:", error)
+    console.error("[bot-management] ❌ Error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })
   }
 }

@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useMemo, useState } from "react"
 import { usePathname } from "next/navigation"
-import { Bell, Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X, Bot, ScrollText, Shield } from "lucide-react"
+import { Bell, Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X, Bot, ScrollText, Shield, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { name: "Dashboard", href: "/", icon: BarChart3 },
   { name: "Chats", href: "/chats", icon: MessageSquare },
   { name: "Orders", href: "/orders", icon: Package },
+  { name: "Ratings", href: "/ratings", icon: Star },
   { name: "Catalog", href: "/catalog", icon: Store },
   { name: "Bot Management", href: "/bot-management", icon: Bot },
   { name: "Logs", href: "/logs", icon: ScrollText },

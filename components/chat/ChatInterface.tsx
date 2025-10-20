@@ -23,6 +23,21 @@ interface BotMessage {
   media_url: string | null
   timestamp: string
   is_from_customer: boolean
+  content_sid?: string
+  variables?: Record<string, string>
+  template_preview?: {
+    sid: string
+    friendlyName: string
+    language: string
+    body: string
+    contentType: string
+    buttons: Array<{
+      type: string
+      title: string
+      id?: string
+      url?: string
+    }>
+  }
 }
 
 export function ChatInterface() {

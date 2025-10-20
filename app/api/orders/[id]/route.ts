@@ -1,39 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { jwtVerify } from "jose"
+import { getAuthenticatedRestaurant } from "@/lib/server-auth"
 import { db, type OrderStatus } from "@/lib/db"
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
-
-async function getUserFromToken(request: NextRequest) {
-  try {
-    const cookieStore = await cookies()
-    const token = cookieStore.get("auth-token")?.value
-
-    if (!token) {
-      return null
-    }
-
-    const { payload } = await jwtVerify(token, JWT_SECRET)
-    return payload.userId as string
-  } catch (error) {
-    return null
-  }
-}
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const userId = await getUserFromToken(request)
+    const restaurant = await getAuthenticatedRestaurant(request)
     const { id } = await params
 
-    if (!userId) {
-      return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
-    }
-
-    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
-
     if (!restaurant) {
-      return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
+      return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
     const existing = await db.getOrder(restaurant.id, id)

@@ -45,7 +45,7 @@ export type SufrahBranch = {
   imageUrl?: string
 }
 
-const SUFRAH_BASE_URL = process.env.BASEURL || "https://api.sufrah.sa"
+const SUFRAH_BASE_URL = process.env.BASEURL || "https://api.dwv.sufrah.sa"
 const SUFRAH_API_TOKEN = `ApiToken ${process.env.APITOKEN}`
 
 function assertConfigured() {

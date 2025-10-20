@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
         rating: true,
       },
     })
-
+    console.log("ratedOrders", ratedOrders)
     // Calculate statistics
     const totalRatings = ratedOrders.length
     const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }

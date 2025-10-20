@@ -86,9 +86,24 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({ success: true, url })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Upload API error:", error)
-    return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })
+    
+    // Provide more specific error messages
+    let errorMessage = "فشل رفع الملف"
+    if (error.message?.includes("MinIO is disabled")) {
+      errorMessage = "خدمة رفع الملفات غير مفعلة"
+    } else if (error.message?.includes("MinIO bucket check failed")) {
+      errorMessage = "خدمة التخزين غير متوفرة. الرجاء التأكد من تشغيل MinIO"
+    } else if (error.message?.includes("MinIO upload failed")) {
+      errorMessage = "فشل رفع الملف إلى التخزين"
+    }
+    
+    return NextResponse.json({ 
+      success: false, 
+      message: errorMessage,
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    }, { status: 500 })
   }
 }
 

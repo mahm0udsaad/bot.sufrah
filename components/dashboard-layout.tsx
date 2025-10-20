@@ -11,22 +11,24 @@ import { Badge } from "@/components/ui/badge"
 import { SignOutButton } from "@/components/sign-out-button"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
+import { LocaleSwitcher } from "@/components/locale-switcher"
+import { useI18n } from "@/hooks/use-i18n"
 
 const NAV_ITEMS = [
-  { name: "Dashboard", href: "/", icon: BarChart3 },
-  { name: "Chats", href: "/chats", icon: MessageSquare },
-  { name: "Orders", href: "/orders", icon: Package },
-  { name: "Ratings", href: "/ratings", icon: Star },
-  { name: "Catalog", href: "/catalog", icon: Store },
-  { name: "Bot Management", href: "/bot-management", icon: Bot },
-  { name: "Logs", href: "/logs", icon: ScrollText },
-  { name: "Usage & Plan", href: "/usage", icon: BarChart3 },
-  { name: "Templates", href: "/templates", icon: FileText },
-  { name: "Settings", href: "/settings", icon: Settings },
+  { labelKey: "navigation.dashboard", href: "/", icon: BarChart3 },
+  { labelKey: "navigation.chats", href: "/chats", icon: MessageSquare },
+  { labelKey: "navigation.orders", href: "/orders", icon: Package },
+  { labelKey: "navigation.ratings", href: "/ratings", icon: Star },
+  { labelKey: "navigation.catalog", href: "/catalog", icon: Store },
+  { labelKey: "navigation.botManagement", href: "/bot-management", icon: Bot },
+  { labelKey: "navigation.logs", href: "/logs", icon: ScrollText },
+  { labelKey: "navigation.usage", href: "/usage", icon: BarChart3 },
+  { labelKey: "navigation.templates", href: "/templates", icon: FileText },
+  { labelKey: "navigation.settings", href: "/settings", icon: Settings },
 ]
 
 const ADMIN_NAV_ITEMS = [
-  { name: "Admin Bots", href: "/admin/bots", icon: Shield },
+  { labelKey: "navigation.adminBots", href: "/admin/bots", icon: Shield },
 ]
 
 interface DashboardLayoutProps {
@@ -36,8 +38,10 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const { user } = useAuth()
-  const restaurantName = user?.restaurant?.name || "Sufrah Bot"
+  const { t, dir } = useI18n()
+  const restaurantName = user?.restaurant?.name || t("common.brand.defaultName")
   const pathname = usePathname()
+  const isRtl = dir === "rtl"
   
   // Check if user is admin - adjust this to include your admin users
   const isAdmin = true // Temporarily allow all logged-in users for testing
@@ -51,20 +55,20 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           pathname === item.href ||
           (item.href !== "/" && pathname?.startsWith(`${item.href}/`)) ||
           (item.href === "/" && pathname === item.href)
-        return { ...item, isActive }
+        return { ...item, isActive, label: t(item.labelKey) }
       }),
-    [pathname],
+    [pathname, t],
   )
-  
+
   const adminNavigation = useMemo(
     () =>
       ADMIN_NAV_ITEMS.map((item) => {
         const isActive =
           pathname === item.href ||
           (item.href !== "/" && pathname?.startsWith(`${item.href}/`))
-        return { ...item, isActive }
+        return { ...item, isActive, label: t(item.labelKey) }
       }),
-    [pathname],
+    [pathname, t],
   )
 
   return (
@@ -73,7 +77,12 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="fixed inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
-          <div className="fixed left-0 top-0 h-full w-64 bg-sidebar border-r border-sidebar-border">
+          <div
+            className={cn(
+              "fixed top-0 h-full w-64 bg-sidebar",
+              isRtl ? "right-0 border-l border-sidebar-border" : "left-0 border-r border-sidebar-border",
+            )}
+          >
             <div className="flex h-16 items-center justify-between px-6">
               <div className="flex items-center gap-2">
                 <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
@@ -88,7 +97,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <nav className="px-4 py-4">
               {navigation.map((item) => (
                 <a
-                  key={item.name}
+                  key={item.href}
                   href={item.href}
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors mb-1",
@@ -98,7 +107,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   )}
                 >
                   <item.icon className="h-4 w-4" />
-                  {item.name}
+                  {item.label}
                 </a>
               ))}
               
@@ -106,11 +115,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 <>
                   <div className="my-4 border-t border-sidebar-border" />
                   <div className="px-3 py-2 text-xs font-semibold text-sidebar-foreground/60 uppercase">
-                    Admin
+                    {t("navigation.adminSection")}
                   </div>
                   {adminNavigation.map((item) => (
                     <a
-                      key={item.name}
+                      key={item.href}
                       href={item.href}
                       className={cn(
                         "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors mb-1",
@@ -120,7 +129,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                       )}
                     >
                       <item.icon className="h-4 w-4" />
-                      {item.name}
+                      {item.label}
                     </a>
                   ))}
                 </>
@@ -134,8 +143,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       )}
 
       {/* Desktop sidebar */}
-      <div className="hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-64 lg:flex-col">
-        <div className="flex grow flex-col gap-y-5 overflow-y-auto bg-sidebar border-r border-sidebar-border px-6 py-4">
+      <div
+        className={cn(
+          "hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-64 lg:flex-col",
+          isRtl ? "lg:right-0" : "lg:left-0",
+        )}
+      >
+        <div
+          className={cn(
+            "flex grow flex-col gap-y-5 overflow-y-auto bg-sidebar px-6 py-4",
+            isRtl ? "border-l border-sidebar-border" : "border-r border-sidebar-border",
+          )}
+        >
             <div className="flex h-16 shrink-0 items-center gap-2">
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
               <span className="text-primary-foreground font-bold text-sm">S</span>
@@ -145,7 +164,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <nav className="flex flex-1 flex-col">
             <ul role="list" className="flex flex-1 flex-col gap-y-1">
               {navigation.map((item) => (
-                <li key={item.name}>
+                <li key={item.href}>
                   <a
                     href={item.href}
                     className={cn(
@@ -156,7 +175,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     )}
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
-                    {item.name}
+                    {item.label}
                   </a>
                 </li>
               ))}
@@ -165,11 +184,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 <>
                   <li className="my-3 border-t border-sidebar-border pt-3">
                     <div className="px-3 py-1 text-xs font-semibold text-sidebar-foreground/60 uppercase">
-                      Admin
+                      {t("navigation.adminSection")}
                     </div>
                   </li>
                   {adminNavigation.map((item) => (
-                    <li key={item.name}>
+                    <li key={item.href}>
                       <a
                         href={item.href}
                         className={cn(
@@ -180,7 +199,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                         )}
                       >
                         <item.icon className="h-4 w-4 shrink-0" />
-                        {item.name}
+                        {item.label}
                       </a>
                     </li>
                   ))}
@@ -195,9 +214,14 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       {/* Main content */}
-      <div className="lg:pl-64">
+      <div className={cn(isRtl ? "lg:pr-64" : "lg:pl-64")}> 
         {/* Top bar */}
-        <div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-border bg-background px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
+        <div
+          className={cn(
+            "sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 bg-background px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8",
+            isRtl ? "border-b border-border" : "border-b border-border",
+          )}
+        >
           <Button variant="ghost" size="sm" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
@@ -213,9 +237,19 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
             <div className="flex flex-1 justify-end items-center gap-x-4 lg:gap-x-6">
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input placeholder="Search conversations..." className="pl-10 w-64" />
+                <Search
+                  className={cn(
+                    "absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground",
+                    isRtl ? "right-3" : "left-3",
+                  )}
+                />
+                <Input
+                  dir={dir}
+                  placeholder={t("navigation.searchPlaceholder")}
+                  className={cn("w-64", isRtl ? "pr-10 pl-3 text-right" : "pl-10")}
+                />
               </div>
+              <LocaleSwitcher />
               <Button variant="ghost" size="sm" className="relative">
                 <Bell className="h-5 w-5" />
                 <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">

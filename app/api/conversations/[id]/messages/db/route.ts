@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getAuthenticatedRestaurant } from "@/lib/server-auth"
 
-const BOT_API_URL = process.env.BOT_API_URL || "https://bot.sufrah.sa/api"
+const BOT_API_URL =
+  process.env.BOT_API_URL || process.env.NEXT_PUBLIC_BOT_API_URL || "https://bot.sufrah.sa/api"
 const BOT_API_TOKEN = process.env.BOT_API_TOKEN || ""
 
 /**
@@ -13,12 +15,18 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    if (!BOT_API_TOKEN) {
+      console.error(`[conversations/${params.id}/messages/db] Missing BOT_API_TOKEN env var`)
+      return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 })
+    }
+
     const { searchParams } = new URL(request.url)
     const limit = searchParams.get("limit") || "100"
     const offset = searchParams.get("offset") || "0"
 
-    // Get restaurant ID from header (for multi-tenancy)
-    const restaurantId = request.headers.get("x-restaurant-id")
+    // Derive restaurant from authenticated session
+    const restaurant = await getAuthenticatedRestaurant(request)
+    const restaurantId = restaurant?.id || undefined
 
     const queryParams = new URLSearchParams({
       limit,
@@ -28,10 +36,7 @@ export async function GET(
     const headers: HeadersInit = {
       Authorization: `Bearer ${BOT_API_TOKEN}`,
       "Content-Type": "application/json",
-    }
-
-    if (restaurantId) {
-      headers["X-Restaurant-Id"] = restaurantId
+      ...(restaurantId ? { "X-Restaurant-Id": restaurantId } : {}),
     }
 
     const response = await fetch(
@@ -40,7 +45,9 @@ export async function GET(
     )
 
     if (!response.ok) {
-      throw new Error(`Bot API error: ${response.status}`)
+      const body = await response.text().catch(() => "")
+      console.error(`Bot API error /db/conversations/${params.id}/messages`, response.status, body)
+      return NextResponse.json({ error: "Bot API request failed" }, { status: response.status })
     }
 
     const messages = await response.json()

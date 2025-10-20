@@ -65,11 +65,28 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
     }
 
-    // Conversation IDs from the bot service may not exist in our local DB.
-    // Attempt a lookup, but do not block if missing – proceed to proxy.
+    // IMPORTANT: Bot API expects customer phone number in E.164 format, not DB conversation ID
+    // Try to fetch the conversation to get the customer phone
+    let customerPhone: string = conversationId
     try {
-      await db.getConversation(restaurant.id, conversationId)
-    } catch {}
+      const conversation = await db.getConversation(restaurant.id, conversationId)
+      // If conversation exists in DB, use the customer phone from it
+      // customerWa is the WhatsApp phone number field in the database
+      if (conversation && conversation.customerWa) {
+        customerPhone = conversation.customerWa
+        console.log(`[send-media] Resolved conversation ${conversationId} to phone: ${customerPhone}`)
+      }
+    } catch (error) {
+      // If conversation not found in DB, assume conversationId is already a phone number
+      console.log(`[send-media] Conversation not in local DB, using conversationId as phone: ${conversationId}`)
+    }
+
+    // Normalize to E.164 format with leading '+' (required by Bot API)
+    customerPhone = customerPhone.startsWith('+')
+      ? customerPhone
+      : `+${customerPhone.replace(/^\+?/, '')}`
+    
+    console.log(`[send-media] Using normalized phone: ${customerPhone}`)
 
     const contentType = request.headers.get("content-type") || ""
 
@@ -84,8 +101,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       botHeaders["X-API-Key"] = BOT_API_KEY
     }
 
-    // Forward to bot API
-    const url = `${BOT_API_URL.replace(/\/$/, "")}/conversations/${encodeURIComponent(conversationId)}/send-media`
+    // Forward to bot API using customer phone number (not DB conversation ID)
+    const url = `${BOT_API_URL.replace(/\/$/, "")}/conversations/${encodeURIComponent(customerPhone)}/send-media`
 
     if (contentType.includes("application/json")) {
       const body = await request.json()
@@ -97,6 +114,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         return NextResponse.json({ success: false, message: "mediaUrl or mediaUrls is required" }, { status: 400 })
       }
 
+      console.log(`[send-media] Attempting to send media to Bot API:`, {
+        url,
+        conversationId_DB: conversationId,
+        customerPhone,
+        mediaUrl,
+        caption,
+        mediaType,
+        restaurantId
+      })
+
       let res = await fetch(url, {
         method: "POST",
         headers: {
@@ -106,29 +133,50 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         body: JSON.stringify({ mediaUrl, caption, mediaType }),
       })
 
-      if (!res.ok && (res.status === 404 || res.status === 405)) {
-        // Fallback to legacy send endpoint
-        const altUrl = `${BOT_API_URL.replace(/\/$/, "")}/conversations/${encodeURIComponent(conversationId)}/send`
-        res = await fetch(altUrl, {
-          method: "POST",
-          headers: {
-            ...botHeaders,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ mediaUrl, caption, mediaType }),
-        })
-      }
+      console.log(`[send-media] Bot API /send-media response:`, {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok
+      })
+
+      // DO NOT fall back to /send - it's text-only and will return "Message is required"
+      // If /send-media fails, it's either:
+      // 1. Endpoint doesn't exist (404) - Bot API needs to be updated
+      // 2. Wrong parameters (400) - Check phone format, restaurant ID, etc.
+      // 3. Restaurant not found (404) - Wrong restaurant ID or not configured in Bot API
 
       if (!res.ok) {
         const text = await res.text()
-        console.error("Bot API error:", text)
+        console.error(`[send-media] Bot API error (${res.status}):`, text)
         
-        // Return 202 if no state yet (as per spec)
-        if (res.status === 404 || res.status === 422) {
-          return NextResponse.json({ message: null }, { status: 202 })
+        // Provide helpful error messages based on status
+        let userMessage = "فشل إرسال الملف"
+        let debugInfo: any = { status: res.status, error: text }
+        
+        if (res.status === 404) {
+          userMessage = "خدمة إرسال الوسائط غير متوفرة في Bot API"
+          debugInfo.hint = "Bot API may not have /send-media endpoint deployed. Check BOT_API_URL and API version."
+        } else if (text.includes("Restaurant context not found")) {
+          userMessage = "المطعم غير موجود في Bot API"
+          debugInfo.hint = "The X-Restaurant-Id may not exist in Bot API's database, or restaurant lacks WhatsApp configuration."
+          debugInfo.restaurantId = restaurantId
+          debugInfo.phone = customerPhone
         }
         
-        return NextResponse.json({ success: false, message: "Bot API error", details: text }, { status: res.status })
+        // Return 202 for 404/422 (per spec)
+        if (res.status === 404 || res.status === 422) {
+          return NextResponse.json({ 
+            message: null,
+            error: userMessage,
+            debug: process.env.NODE_ENV === "development" ? debugInfo : undefined
+          }, { status: 202 })
+        }
+        
+        return NextResponse.json({ 
+          success: false, 
+          message: userMessage,
+          debug: process.env.NODE_ENV === "development" ? debugInfo : undefined
+        }, { status: res.status })
       }
 
       const payload = await res.json().catch(() => ({}))
@@ -136,45 +184,64 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ message: payload.message || payload.data || null })
     }
 
-    // Multipart form-data path
+    // Multipart form-data path - only accept mediaUrl, not direct file uploads
     const form = await request.formData()
     const file = form.get("file") as File | null
-    const caption = form.get("caption") as string | null
-
-    if (!file) {
-      return NextResponse.json({ success: false, message: "file is required in form-data" }, { status: 400 })
+    
+    // Reject direct file uploads as per API specification
+    if (file) {
+      return NextResponse.json({ 
+        success: false, 
+        message: "Direct file uploads not supported. Upload file to storage first and provide mediaUrl.",
+        error: "Use POST /api/upload to upload the file, then send the returned URL via mediaUrl field."
+      }, { status: 422 })
     }
+    
+    const mediaUrl = form.get("mediaUrl") as string | null
+    const caption = form.get("caption") as string | null
+    const mediaType = form.get("mediaType") as string | null
 
-    const forward = new FormData()
-    forward.append("file", file)
-    if (caption) forward.append("caption", caption)
+    if (!mediaUrl) {
+      return NextResponse.json({ 
+        success: false, 
+        message: "mediaUrl is required in form-data" 
+      }, { status: 400 })
+    }
 
     let res = await fetch(url, {
       method: "POST",
-      headers: botHeaders,
-      body: forward,
+      headers: {
+        ...botHeaders,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ mediaUrl, caption, mediaType }),
     })
-
-    if (!res.ok && (res.status === 404 || res.status === 405)) {
-      // Fallback to legacy send endpoint
-      const altUrl = `${BOT_API_URL.replace(/\/$/, "")}/conversations/${encodeURIComponent(conversationId)}/send`
-      res = await fetch(altUrl, {
-        method: "POST",
-        headers: botHeaders,
-        body: forward,
-      })
-    }
 
     if (!res.ok) {
       const text = await res.text()
-      console.error("Bot API error:", text)
+      console.error(`[send-media] Bot API error (${res.status}):`, text)
       
-      // Return 202 if no state yet (as per spec)
-      if (res.status === 404 || res.status === 422) {
-        return NextResponse.json({ message: null }, { status: 202 })
+      let userMessage = "فشل إرسال الملف"
+      if (res.status === 404) {
+        userMessage = "خدمة إرسال الوسائط غير متوفرة في Bot API"
+      } else if (text.includes("Restaurant context not found")) {
+        userMessage = "المطعم غير موجود في Bot API"
       }
       
-      return NextResponse.json({ success: false, message: "Bot API error", details: text }, { status: res.status })
+      // Return 202 for 404/422 (per spec)
+      if (res.status === 404 || res.status === 422) {
+        return NextResponse.json({ 
+          message: null,
+          error: userMessage,
+          debug: process.env.NODE_ENV === "development" ? text : undefined
+        }, { status: 202 })
+      }
+      
+      return NextResponse.json({ 
+        success: false, 
+        message: userMessage,
+        debug: process.env.NODE_ENV === "development" ? text : undefined
+      }, { status: res.status })
     }
 
     const payload = await res.json().catch(() => ({}))

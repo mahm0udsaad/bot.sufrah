@@ -13,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Download, Eye, Loader2, Star, TrendingUp, MessageSquare, Award } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth"
+import { cn, normalizeCurrencyCode } from "@/lib/utils"
+import { useI18n } from "@/hooks/use-i18n"
 
 interface Rating {
   id: string
@@ -58,10 +60,16 @@ interface RatingStats {
 }
 
 function formatCurrency(amountCents: number, currency: string) {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-  }).format((amountCents || 0) / 100)
+  const code = normalizeCurrencyCode(currency)
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+    }).format((amountCents || 0) / 100)
+  } catch {
+    const amount = ((amountCents || 0) / 100).toFixed(2)
+    return `${amount} ${code}`
+  }
 }
 
 function StarRating({ rating, size = "sm" }: { rating: number; size?: "sm" | "md" | "lg" }) {
@@ -87,6 +95,7 @@ function StarRating({ rating, size = "sm" }: { rating: number; size?: "sm" | "md
 
 function RatingsContent() {
   const { user } = useAuth()
+  const { t, dir, locale } = useI18n()
   const [ratings, setRatings] = useState<Rating[]>([])
   const [stats, setStats] = useState<RatingStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -94,6 +103,21 @@ function RatingsContent() {
   const [ratingFilter, setRatingFilter] = useState("ALL")
   const [selectedRating, setSelectedRating] = useState<RatingWithItems | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const isRtl = dir === "rtl"
+  const ratingOptionsList = useMemo(
+    () => [
+      { value: "ALL", label: t("ratings.filters.options.all") },
+      { value: "5", label: t("ratings.filters.options.five") },
+      { value: "4", label: t("ratings.filters.options.four") },
+      { value: "3", label: t("ratings.filters.options.three") },
+      { value: "2", label: t("ratings.filters.options.two") },
+      { value: "1", label: t("ratings.filters.options.one") },
+    ],
+    [t],
+  )
+  const formatDate = (iso: string) => new Date(iso).toLocaleDateString(locale)
+  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString(locale)
+  const formatDateTime = (iso: string) => new Date(iso).toLocaleString(locale)
 
   const fetchRatings = async () => {
     try {
@@ -114,7 +138,7 @@ function RatingsContent() {
       }
     } catch (error) {
       console.error("Failed to load ratings", error)
-      toast.error("Unable to load ratings")
+      toast.error(t("ratings.toasts.loadFailed"))
     } finally {
       setLoading(false)
     }
@@ -129,11 +153,11 @@ function RatingsContent() {
         const data = await response.json()
         setSelectedRating(data)
       } else {
-        toast.error("Unable to load rating details")
+        toast.error(t("ratings.toasts.detailFailed"))
       }
     } catch (error) {
       console.error("Failed to load rating detail", error)
-      toast.error("Unable to load rating details")
+      toast.error(t("ratings.toasts.detailFailed"))
     } finally {
       setLoadingDetail(false)
     }
@@ -189,24 +213,24 @@ function RatingsContent() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Customer Ratings</h1>
-          <p className="text-muted-foreground">View and analyze customer feedback</p>
+          <h1 className="text-2xl font-bold text-foreground">{t("ratings.header.title")}</h1>
+          <p className="text-muted-foreground">{t("ratings.header.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm">
-            <Download className="mr-2 h-4 w-4" /> Export
+            <Download className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2")} />
+            {t("ratings.actions.export")}
           </Button>
           <Select value={ratingFilter} onValueChange={setRatingFilter}>
-            <SelectTrigger className="w-36">
-              <SelectValue placeholder="Filter by rating" />
+            <SelectTrigger className="w-40" dir={dir}>
+              <SelectValue placeholder={t("ratings.filters.placeholder")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All Ratings</SelectItem>
-              <SelectItem value="5">5 Stars</SelectItem>
-              <SelectItem value="4">4 Stars</SelectItem>
-              <SelectItem value="3">3 Stars</SelectItem>
-              <SelectItem value="2">2 Stars</SelectItem>
-              <SelectItem value="1">1 Star</SelectItem>
+              {ratingOptionsList.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -218,7 +242,7 @@ function RatingsContent() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Total Ratings</p>
+                <p className="text-sm font-medium text-muted-foreground">{t("ratings.metrics.total.title")}</p>
                 <p className="text-2xl font-bold">{stats?.totalRatings ?? 0}</p>
               </div>
               <MessageSquare className="h-8 w-8 text-blue-600" />
@@ -230,8 +254,8 @@ function RatingsContent() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Average Rating</p>
-                <div className="flex items-center gap-2 mt-1">
+                <p className="text-sm font-medium text-muted-foreground">{t("ratings.metrics.average.title")}</p>
+                <div className="mt-1 flex items-center gap-2">
                   <p className="text-2xl font-bold">{stats?.averageRating.toFixed(2) ?? "0.00"}</p>
                   <StarRating rating={Math.round(stats?.averageRating ?? 0)} size="sm" />
                 </div>
@@ -245,9 +269,9 @@ function RatingsContent() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Positive Ratings</p>
+                <p className="text-sm font-medium text-muted-foreground">{t("ratings.metrics.positive.title")}</p>
                 <p className="text-2xl font-bold">{positiveRatingsPercentage}%</p>
-                <p className="text-xs text-muted-foreground mt-1">4-5 stars</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("ratings.metrics.positive.hint")}</p>
               </div>
               <TrendingUp className="h-8 w-8 text-green-600" />
             </div>
@@ -258,9 +282,9 @@ function RatingsContent() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-muted-foreground">Low Ratings</p>
+                <p className="text-sm font-medium text-muted-foreground">{t("ratings.metrics.negative.title")}</p>
                 <p className="text-2xl font-bold">{negativeRatingsCount}</p>
-                <p className="text-xs text-muted-foreground mt-1">1-3 stars</p>
+                <p className="mt-1 text-xs text-muted-foreground">{t("ratings.metrics.negative.hint")}</p>
               </div>
               <Award className="h-8 w-8 text-red-600" />
             </div>
@@ -272,7 +296,7 @@ function RatingsContent() {
       {stats && (
         <Card>
           <CardHeader>
-            <CardTitle>Rating Distribution</CardTitle>
+            <CardTitle>{t("ratings.distribution.title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -281,18 +305,20 @@ function RatingsContent() {
                 const percentage = stats.totalRatings > 0 ? (count / stats.totalRatings) * 100 : 0
                 return (
                   <div key={star} className="flex items-center gap-4">
-                    <div className="flex items-center gap-1 w-24">
-                      <span className="text-sm font-medium w-4">{star}</span>
+                    <div className="flex w-24 items-center gap-1">
+                      <span className="w-4 text-sm font-medium">{star}</span>
                       <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
                     </div>
-                    <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="flex-1 overflow-hidden rounded-full bg-gray-100">
                       <div
-                        className="h-full bg-yellow-400 transition-all duration-300"
+                        className="h-6 bg-yellow-400 transition-all duration-300"
                         style={{ width: `${percentage}%` }}
                       />
                     </div>
-                    <span className="text-sm text-muted-foreground w-16 text-right">
-                      {count} ({percentage.toFixed(0)}%)
+                    <span className="w-24 text-sm text-muted-foreground text-right">
+                      {t("ratings.distribution.entry", {
+                        values: { count, percentage: percentage.toFixed(0) },
+                      })}
                     </span>
                   </div>
                 )
@@ -306,15 +332,21 @@ function RatingsContent() {
       <Card>
         <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <CardTitle>Recent Ratings</CardTitle>
-            <p className="text-sm text-muted-foreground">Customer feedback and reviews</p>
+            <CardTitle>{t("ratings.table.title")}</CardTitle>
+            <p className="text-sm text-muted-foreground">{t("ratings.table.subtitle")}</p>
           </div>
           <div className="flex w-full max-w-md items-center gap-2 md:w-auto">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                className={cn(
+                  "absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground",
+                  isRtl ? "right-3" : "left-3",
+                )}
+              />
               <Input
-                placeholder="Search by customer or comment"
-                className="pl-9"
+                dir={dir}
+                placeholder={t("ratings.table.searchPlaceholder")}
+                className={cn("w-full", isRtl ? "pr-10 pl-3 text-right" : "pl-9")}
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
               />
@@ -325,13 +357,15 @@ function RatingsContent() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Customer</TableHead>
-                <TableHead>Rating</TableHead>
-                <TableHead>Comment</TableHead>
-                <TableHead>Order Type</TableHead>
-                <TableHead>Total</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+                <TableHead>{t("ratings.table.columns.customer")}</TableHead>
+                <TableHead>{t("ratings.table.columns.rating")}</TableHead>
+                <TableHead>{t("ratings.table.columns.comment")}</TableHead>
+                <TableHead>{t("ratings.table.columns.orderType")}</TableHead>
+                <TableHead>{t("ratings.table.columns.total")}</TableHead>
+                <TableHead>{t("ratings.table.columns.date")}</TableHead>
+                <TableHead className={cn(isRtl ? "text-left" : "text-right")}>
+                  {t("ratings.table.columns.actions")}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -339,16 +373,24 @@ function RatingsContent() {
                 <TableRow key={rating.id}>
                   <TableCell>
                     <div className="flex flex-col">
-                      <span className="font-medium">{rating.customerName || "Guest"}</span>
+                      <span className="font-medium">
+                        {rating.customerName || t("ratings.table.guest")}
+                      </span>
                       <span className="text-xs text-muted-foreground">
-                        {rating.customerPhone ? `***${rating.customerPhone.slice(-4)}` : "—"}
+                        {rating.customerPhone
+                          ? t("ratings.table.phoneMasked", {
+                              values: { lastDigits: rating.customerPhone.slice(-4) },
+                            })
+                          : t("ratings.table.noValueShort")}
                       </span>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col gap-1">
                       <StarRating rating={rating.rating} />
-                      <span className="text-xs text-muted-foreground">{rating.rating}/5</span>
+                      <span className="text-xs text-muted-foreground">
+                        {t("ratings.table.ratingOutOf", { values: { rating: rating.rating } })}
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -356,28 +398,28 @@ function RatingsContent() {
                       {rating.ratingComment ? (
                         <p className="text-sm truncate">{rating.ratingComment}</p>
                       ) : (
-                        <span className="text-sm text-muted-foreground">No comment</span>
+                        <span className="text-sm text-muted-foreground">{t("ratings.table.noComment")}</span>
                       )}
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant="outline">{rating.orderType || "—"}</Badge>
+                    <Badge variant="outline">
+                      {rating.orderType || t("ratings.table.noValueShort")}
+                    </Badge>
                   </TableCell>
                   <TableCell>{formatCurrency(rating.totalCents, rating.currency)}</TableCell>
                   <TableCell>
                     <div className="flex flex-col">
-                      <span className="text-sm">{new Date(rating.ratedAt).toLocaleDateString()}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(rating.ratedAt).toLocaleTimeString()}
-                      </span>
+                      <span className="text-sm">{formatDate(rating.ratedAt)}</span>
+                      <span className="text-xs text-muted-foreground">{formatTime(rating.ratedAt)}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className={cn(isRtl ? "text-left" : "text-right")}>
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => fetchRatingDetail(rating.id)}
-                      aria-label="View rating details"
+                      aria-label={t("ratings.actions.viewDetails")}
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
@@ -388,7 +430,7 @@ function RatingsContent() {
               {filteredRatings.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                    No ratings match the current filters.
+                    {t("ratings.table.empty")}
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -407,25 +449,29 @@ function RatingsContent() {
           ) : selectedRating ? (
             <>
               <DialogHeader>
-                <DialogTitle>Rating Details</DialogTitle>
+                <DialogTitle>{t("ratings.dialog.title")}</DialogTitle>
               </DialogHeader>
               <div className="space-y-6">
                 {/* Rating Summary */}
                 <Card>
                   <CardContent className="p-6">
-                    <div className="flex items-center justify-between mb-4">
+                    <div className="mb-4 flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-muted-foreground mb-1">Customer Rating</p>
+                        <p className="mb-1 text-sm text-muted-foreground">
+                          {t("ratings.dialog.summary.customerRating")}
+                        </p>
                         <StarRating rating={selectedRating.rating} size="lg" />
                       </div>
                       <div className="text-right">
                         <p className="text-3xl font-bold">{selectedRating.rating}</p>
-                        <p className="text-sm text-muted-foreground">out of 5</p>
+                        <p className="text-sm text-muted-foreground">{t("ratings.dialog.summary.outOf")}</p>
                       </div>
                     </div>
                     {selectedRating.ratingComment && (
                       <div className="border-t pt-4">
-                        <p className="text-sm font-medium mb-2">Customer Comment</p>
+                        <p className="mb-2 text-sm font-medium">
+                          {t("ratings.dialog.summary.commentTitle")}
+                        </p>
                         <p className="text-sm text-muted-foreground italic">"{selectedRating.ratingComment}"</p>
                       </div>
                     )}
@@ -435,54 +481,54 @@ function RatingsContent() {
                 {/* Customer Information */}
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <p className="text-sm font-medium mb-1">Customer Name</p>
-                    <p className="text-sm text-muted-foreground">{selectedRating.customerName || "Guest"}</p>
+                    <p className="mb-1 text-sm font-medium">{t("ratings.dialog.customer.name")}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedRating.customerName || t("ratings.table.guest")}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium mb-1">Phone Number</p>
-                    <p className="text-sm text-muted-foreground">{selectedRating.customerPhone || "—"}</p>
+                    <p className="mb-1 text-sm font-medium">{t("ratings.dialog.customer.phone")}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedRating.customerPhone || t("ratings.table.noValueShort")}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium mb-1">Order Type</p>
-                    <p className="text-sm text-muted-foreground">{selectedRating.orderType || "—"}</p>
+                    <p className="mb-1 text-sm font-medium">{t("ratings.dialog.customer.orderType")}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedRating.orderType || t("ratings.table.noValueShort")}
+                    </p>
                   </div>
                   <div>
-                    <p className="text-sm font-medium mb-1">Payment Method</p>
-                    <p className="text-sm text-muted-foreground">{selectedRating.paymentMethod || "—"}</p>
+                    <p className="mb-1 text-sm font-medium">{t("ratings.dialog.customer.paymentMethod")}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedRating.paymentMethod || t("ratings.table.noValueShort")}
+                    </p>
                   </div>
                   {selectedRating.branchName && (
-                    <>
-                      <div>
-                        <p className="text-sm font-medium mb-1">Branch</p>
-                        <p className="text-sm text-muted-foreground">{selectedRating.branchName}</p>
-                      </div>
-                    </>
+                    <div>
+                      <p className="mb-1 text-sm font-medium">{t("ratings.dialog.customer.branch")}</p>
+                      <p className="text-sm text-muted-foreground">{selectedRating.branchName}</p>
+                    </div>
                   )}
                 </div>
 
                 {/* Order Timeline */}
                 <div>
-                  <p className="text-sm font-medium mb-3">Timeline</p>
+                  <p className="mb-3 text-sm font-medium">{t("ratings.dialog.timeline.title")}</p>
                   <div className="space-y-2 border-l-2 border-gray-200 pl-4">
                     <div>
-                      <p className="text-xs font-medium">Order Placed</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(selectedRating.orderCreatedAt).toLocaleString()}
-                      </p>
+                      <p className="text-xs font-medium">{t("ratings.dialog.timeline.placed")}</p>
+                      <p className="text-xs text-muted-foreground">{formatDateTime(selectedRating.orderCreatedAt)}</p>
                     </div>
                     {selectedRating.ratingAskedAt && (
                       <div>
-                        <p className="text-xs font-medium">Rating Requested</p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(selectedRating.ratingAskedAt).toLocaleString()}
-                        </p>
+                        <p className="text-xs font-medium">{t("ratings.dialog.timeline.requested")}</p>
+                        <p className="text-xs text-muted-foreground">{formatDateTime(selectedRating.ratingAskedAt)}</p>
                       </div>
                     )}
                     <div>
-                      <p className="text-xs font-medium">Rating Submitted</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(selectedRating.ratedAt).toLocaleString()}
-                      </p>
+                      <p className="text-xs font-medium">{t("ratings.dialog.timeline.submitted")}</p>
+                      <p className="text-xs text-muted-foreground">{formatDateTime(selectedRating.ratedAt)}</p>
                     </div>
                   </div>
                 </div>
@@ -490,20 +536,24 @@ function RatingsContent() {
                 {/* Order Items */}
                 {selectedRating.items && selectedRating.items.length > 0 && (
                   <div>
-                    <p className="text-sm font-medium mb-3">Order Items</p>
+                    <p className="mb-3 text-sm font-medium">{t("ratings.dialog.items.title")}</p>
                     <div className="space-y-2 rounded-lg border">
                       {selectedRating.items.map((item) => (
                         <div key={item.id} className="flex items-center justify-between px-4 py-3 border-b last:border-b-0">
                           <div>
                             <p className="font-medium text-sm">{item.name}</p>
-                            <p className="text-xs text-muted-foreground">Qty: {item.quantity}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {t("ratings.dialog.items.quantity", { values: { qty: item.quantity } })}
+                            </p>
                           </div>
                           <div className="text-right">
                             <p className="font-medium text-sm">
                               {formatCurrency(item.totalCents, selectedRating.currency)}
                             </p>
                             <p className="text-xs text-muted-foreground">
-                              {formatCurrency(item.unitCents, selectedRating.currency)} each
+                              {t("ratings.dialog.items.unitPrice", {
+                                values: { price: formatCurrency(item.unitCents, selectedRating.currency) },
+                              })}
                             </p>
                           </div>
                         </div>
@@ -514,7 +564,7 @@ function RatingsContent() {
 
                 {/* Order Total */}
                 <div className="flex items-center justify-between border-t pt-4">
-                  <span className="font-medium">Total Amount</span>
+                  <span className="font-medium">{t("ratings.dialog.total")}</span>
                   <span className="text-lg font-bold">
                     {formatCurrency(selectedRating.totalCents, selectedRating.currency)}
                   </span>
@@ -537,4 +587,3 @@ export default function RatingsPage() {
     </AuthGuard>
   )
 }
-

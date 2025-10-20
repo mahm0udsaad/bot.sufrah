@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AuthGuard } from "@/components/auth-guard"
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Search, Plus, Edit, Trash2, Copy, MessageSquare, CheckCircle2, Clock, XCircle, Loader2 } from "lucide-react"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/hooks/use-i18n"
+import { cn } from "@/lib/utils"
 
 interface Template {
   id: string
@@ -47,17 +49,9 @@ const statusIcons = {
   rejected: XCircle,
 }
 
-const categories = [
-  { value: "greeting", label: "Greeting" },
-  { value: "order", label: "Order" },
-  { value: "delivery", label: "Delivery" },
-  { value: "menu", label: "Menu" },
-  { value: "payment", label: "Payment" },
-  { value: "support", label: "Support" },
-]
-
 export default function TemplatesPage() {
   const { user } = useAuth()
+  const { t, dir, locale } = useI18n()
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
@@ -65,6 +59,7 @@ export default function TemplatesPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState("")
+  const isRtl = dir === "rtl"
 
   // Form state
   const [formData, setFormData] = useState({
@@ -100,7 +95,7 @@ export default function TemplatesPage() {
   const handleCreateTemplate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.name || !formData.category || !formData.body_text) {
-      setError("Please fill in all required fields")
+      setError(t("templates.errors.requiredFields"))
       return
     }
 
@@ -128,17 +123,17 @@ export default function TemplatesPage() {
         })
       } else {
         const data = await response.json()
-        setError(data.message || "Failed to create template")
+        setError(data.message || t("templates.errors.createFailed"))
       }
     } catch (error) {
-      setError("Network error occurred")
+      setError(t("templates.errors.network"))
     } finally {
       setCreating(false)
     }
   }
 
   const handleDeleteTemplate = async (templateId: string) => {
-    if (!confirm("Are you sure you want to delete this template?")) return
+    if (!confirm(t("templates.actions.confirmDelete"))) return
 
     try {
       const response = await fetch(`/api/templates/${templateId}`, {
@@ -157,6 +152,38 @@ export default function TemplatesPage() {
     navigator.clipboard.writeText(template.body_text)
     // You could add a toast notification here
   }
+
+  const categories = useMemo(
+    () => [
+      { value: "greeting", label: t("templates.categories.greeting") },
+      { value: "order", label: t("templates.categories.order") },
+      { value: "delivery", label: t("templates.categories.delivery") },
+      { value: "menu", label: t("templates.categories.menu") },
+      { value: "payment", label: t("templates.categories.payment") },
+      { value: "support", label: t("templates.categories.support") },
+    ],
+    [t],
+  )
+
+  const headerTypeOptions = useMemo(
+    () => [
+      { value: "text", label: t("templates.form.headerTypes.text") },
+      { value: "image", label: t("templates.form.headerTypes.image") },
+      { value: "document", label: t("templates.form.headerTypes.document") },
+      { value: "video", label: t("templates.form.headerTypes.video") },
+    ],
+    [t],
+  )
+
+  const statusLabels = useMemo(
+    () => ({
+      draft: t("templates.status.draft"),
+      pending: t("templates.status.pending"),
+      approved: t("templates.status.approved"),
+      rejected: t("templates.status.rejected"),
+    }),
+    [t],
+  )
 
   const extractVariables = (text: string): string[] => {
     const matches = text.match(/\{\{([^}]+)\}\}/g)
@@ -196,19 +223,19 @@ export default function TemplatesPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">WhatsApp Templates</h1>
-              <p className="text-muted-foreground">Manage your approved message templates</p>
+              <h1 className="text-2xl font-bold text-foreground">{t("templates.header.title")}</h1>
+              <p className="text-muted-foreground">{t("templates.header.subtitle")}</p>
             </div>
             <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Template
+                  <Plus className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2")} />
+                  {t("templates.actions.create")}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl">
                 <DialogHeader>
-                  <DialogTitle>Create New Template</DialogTitle>
+                  <DialogTitle>{t("templates.form.dialogTitle")}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleCreateTemplate} className="space-y-4">
                   {error && (
@@ -219,23 +246,24 @@ export default function TemplatesPage() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="template-name">Template Name *</Label>
+                      <Label htmlFor="template-name">{t("templates.form.name.label")}</Label>
                       <Input
                         id="template-name"
-                        placeholder="Enter template name"
+                        dir={dir}
+                        placeholder={t("templates.form.name.placeholder")}
                         value={formData.name}
                         onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
                         required
                       />
                     </div>
                     <div>
-                      <Label htmlFor="category">Category *</Label>
+                      <Label htmlFor="category">{t("templates.form.category.label")}</Label>
                       <Select
                         value={formData.category}
                         onValueChange={(value) => setFormData((prev) => ({ ...prev, category: value }))}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
+                          <SelectValue placeholder={t("templates.form.category.placeholder")} />
                         </SelectTrigger>
                         <SelectContent>
                           {categories.map((category) => (
@@ -249,29 +277,31 @@ export default function TemplatesPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="header-type">Header Type (Optional)</Label>
+                    <Label htmlFor="header-type">{t("templates.form.headerType.label")}</Label>
                     <Select
                       value={formData.header_type}
                       onValueChange={(value) => setFormData((prev) => ({ ...prev, header_type: value }))}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select header type" />
+                        <SelectValue placeholder={t("templates.form.headerType.placeholder")} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="text">Text</SelectItem>
-                        <SelectItem value="image">Image</SelectItem>
-                        <SelectItem value="document">Document</SelectItem>
-                        <SelectItem value="video">Video</SelectItem>
+                        {headerTypeOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
 
                   {formData.header_type && (
                     <div>
-                      <Label htmlFor="header-content">Header Content</Label>
+                      <Label htmlFor="header-content">{t("templates.form.headerContent.label")}</Label>
                       <Input
                         id="header-content"
-                        placeholder="Enter header content"
+                        dir={dir}
+                        placeholder={t("templates.form.headerContent.placeholder")}
                         value={formData.header_content}
                         onChange={(e) => setFormData((prev) => ({ ...prev, header_content: e.target.value }))}
                       />
@@ -279,19 +309,22 @@ export default function TemplatesPage() {
                   )}
 
                   <div>
-                    <Label htmlFor="content">Message Content *</Label>
+                    <Label htmlFor="content">{t("templates.form.body.label")}</Label>
                     <Textarea
                       id="content"
-                      placeholder="Enter your message template..."
+                      dir={dir}
+                      placeholder={t("templates.form.body.placeholder")}
                       className="min-h-32"
                       value={formData.body_text}
                       onChange={(e) => setFormData((prev) => ({ ...prev, body_text: e.target.value }))}
                       required
                     />
-                    <p className="text-sm text-muted-foreground mt-1">Use {`{{variable_name}}`} for dynamic content</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {t("templates.form.body.helper")}
+                    </p>
                     {formData.body_text && (
                       <div className="mt-2">
-                        <p className="text-sm font-medium">Variables found:</p>
+                        <p className="text-sm font-medium">{t("templates.form.variables.title")}</p>
                         <div className="flex flex-wrap gap-1 mt-1">
                           {extractVariables(formData.body_text).map((variable) => (
                             <Badge key={variable} variant="secondary" className="text-xs">
@@ -304,10 +337,11 @@ export default function TemplatesPage() {
                   </div>
 
                   <div>
-                    <Label htmlFor="footer">Footer Text (Optional)</Label>
+                    <Label htmlFor="footer">{t("templates.form.footer.label")}</Label>
                     <Input
                       id="footer"
-                      placeholder="Enter footer text"
+                      dir={dir}
+                      placeholder={t("templates.form.footer.placeholder")}
                       value={formData.footer_text}
                       onChange={(e) => setFormData((prev) => ({ ...prev, footer_text: e.target.value }))}
                     />
@@ -320,16 +354,16 @@ export default function TemplatesPage() {
                       onClick={() => setIsCreateDialogOpen(false)}
                       disabled={creating}
                     >
-                      Cancel
+                      {t("templates.actions.cancel")}
                     </Button>
                     <Button type="submit" disabled={creating}>
                       {creating ? (
                         <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Creating...
+                          <Loader2 className={cn("h-4 w-4 animate-spin", isRtl ? "ml-2" : "mr-2")} />
+                          {t("templates.actions.creating")}
                         </>
                       ) : (
-                        "Submit for Approval"
+                        t("templates.actions.submit")
                       )}
                     </Button>
                   </div>
@@ -339,13 +373,13 @@ export default function TemplatesPage() {
           </div>
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <Card>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Templates</p>
-                    <p className="text-2xl font-bold">{stats.total}</p>
+                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.total")}</p>
+                    <p className="text-2xl font-bold">{stats.total.toLocaleString(locale)}</p>
                   </div>
                   <MessageSquare className="h-8 w-8 text-blue-600" />
                 </div>
@@ -355,8 +389,8 @@ export default function TemplatesPage() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Approved</p>
-                    <p className="text-2xl font-bold text-green-600">{stats.approved}</p>
+                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.approved")}</p>
+                    <p className="text-2xl font-bold text-green-600">{stats.approved.toLocaleString(locale)}</p>
                   </div>
                   <CheckCircle2 className="h-8 w-8 text-green-600" />
                 </div>
@@ -366,8 +400,8 @@ export default function TemplatesPage() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Pending</p>
-                    <p className="text-2xl font-bold text-yellow-600">{stats.pending}</p>
+                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.pending")}</p>
+                    <p className="text-2xl font-bold text-yellow-600">{stats.pending.toLocaleString(locale)}</p>
                   </div>
                   <Clock className="h-8 w-8 text-yellow-600" />
                 </div>
@@ -377,8 +411,8 @@ export default function TemplatesPage() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">Total Usage</p>
-                    <p className="text-2xl font-bold">{stats.totalUsage}</p>
+                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.totalUsage")}</p>
+                    <p className="text-2xl font-bold">{stats.totalUsage.toLocaleString(locale)}</p>
                   </div>
                   <div className="h-8 w-8 bg-purple-100 rounded-lg flex items-center justify-center">
                     <span className="text-purple-600 font-bold text-sm">📊</span>
@@ -391,20 +425,26 @@ export default function TemplatesPage() {
           {/* Filters */}
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                className={cn(
+                  "absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground",
+                  isRtl ? "right-3" : "left-3",
+                )}
+              />
               <Input
-                placeholder="Search templates..."
-                className="pl-10"
+                dir={dir}
+                placeholder={t("templates.filters.searchPlaceholder")}
+                className={cn(isRtl ? "pr-10 pl-3 text-right" : "pl-10")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="All Categories" />
+              <SelectTrigger className="w-48" dir={dir}>
+                <SelectValue placeholder={t("templates.filters.categoryPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="all">{t("templates.filters.allCategories")}</SelectItem>
                 {categories.map((category) => (
                   <SelectItem key={category.value} value={category.value}>
                     {category.label}
@@ -427,12 +467,14 @@ export default function TemplatesPage() {
                       <div>
                         <CardTitle className="text-lg">{template.name}</CardTitle>
                         <Badge variant="outline" className="mt-1 capitalize">
-                          {template.category}
+                          {t(`templates.categories.${template.category}`, {
+                            defaultValue: template.category,
+                          })}
                         </Badge>
                       </div>
                       <Badge className={statusColors[template.status as keyof typeof statusColors]}>
-                        <StatusIcon className="h-3 w-3 mr-1" />
-                        {template.status}
+                        <StatusIcon className={cn("h-3 w-3", isRtl ? "ml-1" : "mr-1")} />
+                        {statusLabels[template.status]}
                       </Badge>
                     </div>
                   </CardHeader>
@@ -444,7 +486,7 @@ export default function TemplatesPage() {
 
                       {variables.length > 0 && (
                         <div>
-                          <p className="text-sm font-medium mb-2">Variables:</p>
+                          <p className="mb-2 text-sm font-medium">{t("templates.form.variables.heading")}</p>
                           <div className="flex flex-wrap gap-1">
                             {variables.map((variable) => (
                               <Badge key={variable} variant="secondary" className="text-xs">
@@ -456,8 +498,12 @@ export default function TemplatesPage() {
                       )}
 
                       <div className="flex items-center justify-between text-sm text-muted-foreground">
-                        <span>Used {template.usage_count} times</span>
-                        <span>{new Date(template.updated_at).toLocaleDateString()}</span>
+                        <span>
+                          {t("templates.usage.used", {
+                            values: { count: template.usage_count.toLocaleString(locale) },
+                          })}
+                        </span>
+                        <span>{new Date(template.updated_at).toLocaleDateString(locale)}</span>
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -466,14 +512,21 @@ export default function TemplatesPage() {
                           size="sm"
                           className="flex-1 bg-transparent"
                           onClick={() => handleCopyTemplate(template)}
+                          aria-label={t("templates.actions.copy")}
                         >
-                          <Copy className="h-3 w-3 mr-1" />
-                          Copy
+                          <Copy className={cn("h-3 w-3", isRtl ? "ml-1" : "mr-1")} />
+                          {t("templates.actions.copy")}
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" aria-label={t("templates.actions.edit")}
+                        >
                           <Edit className="h-3 w-3" />
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => handleDeleteTemplate(template.id)}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteTemplate(template.id)}
+                          aria-label={t("templates.actions.delete")}
+                        >
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
@@ -487,16 +540,16 @@ export default function TemplatesPage() {
           {filteredTemplates.length === 0 && (
             <div className="text-center py-12">
               <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">No templates found</h3>
+              <h3 className="text-lg font-medium mb-2">{t("templates.empty.title")}</h3>
               <p className="text-muted-foreground mb-4">
                 {searchQuery || selectedCategory !== "all"
-                  ? "Try adjusting your search or filters"
-                  : "Create your first template to get started"}
+                  ? t("templates.empty.searchMessage")
+                  : t("templates.empty.defaultMessage")}
               </p>
               {!searchQuery && selectedCategory === "all" && (
                 <Button onClick={() => setIsCreateDialogOpen(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create Template
+                  <Plus className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2")} />
+                  {t("templates.actions.create")}
                 </Button>
               )}
             </div>

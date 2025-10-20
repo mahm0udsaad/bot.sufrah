@@ -1,38 +1,16 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { jwtVerify } from "jose"
 import prisma from "@/lib/prisma"
 import { db } from "@/lib/db"
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
-
-async function getUserFromToken(request: NextRequest) {
-  try {
-    const cookieStore = await cookies()
-    const token = cookieStore.get("auth-token")?.value
-
-    if (!token) {
-      return null
-    }
-
-    const { payload } = await jwtVerify(token, JWT_SECRET)
-    return payload.userId as string
-  } catch (error) {
-    return null
-  }
-}
+import { getAuthenticatedRestaurant, getAuthenticatedUser } from "@/lib/server-auth"
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getUserFromToken(request)
+    const [restaurant, user] = await Promise.all([
+      getAuthenticatedRestaurant(request),
+      getAuthenticatedUser(request),
+    ])
 
-    if (!userId) {
-      return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
-    }
-
-    const restaurant = await db.getPrimaryRestaurantByUserId(userId)
-
-    if (!restaurant) {
+    if (!restaurant || !user) {
       return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
     }
 

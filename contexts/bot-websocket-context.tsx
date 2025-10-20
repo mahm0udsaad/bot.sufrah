@@ -362,7 +362,7 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
       }
       const fallbackPayload = await fallbackRes.json()
       const fallbackList: any[] = fallbackPayload.conversations || fallbackPayload || []
-      return fallbackList.map((c) => ({
+      const normalizedFallback = fallbackList.map((c) => ({
         id: c.id,
         customer_phone: c.customer_phone ?? c.customerPhone ?? c.customerWa ?? "",
         customer_name: c.customer_name ?? c.customerName ?? null,
@@ -371,10 +371,12 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
         unread_count: c.unread_count ?? c.unreadCount ?? 0,
         is_bot_active: c.is_bot_active ?? c.isBotActive ?? true,
       }))
+      setConversations(normalizedFallback)
+      return normalizedFallback
     }
     const payload = await res.json()
     const list: any[] = payload.conversations || payload || []
-    return list.map((c) => ({
+    const normalized = list.map((c) => ({
       id: c.id,
       customer_phone: c.customer_phone ?? c.customerPhone ?? c.customerWa ?? "",
       customer_name: c.customer_name ?? c.customerName ?? null,
@@ -383,6 +385,8 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
       unread_count: c.unread_count ?? c.unreadCount ?? 0,
       is_bot_active: c.is_bot_active ?? c.isBotActive ?? true,
     }))
+    setConversations(normalized)
+    return normalized
   }
 
   const fetchMessages = async (conversationId: string): Promise<BotMessage[]> => {
@@ -462,9 +466,14 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
 
       const uploadRes = await fetch(`/api/upload`, { method: "POST", body: uploadForm })
       if (!uploadRes.ok) {
-        throw new Error("Failed to upload media")
+        const uploadJson = await uploadRes.json()
+        const errorMessage = uploadJson.message || "فشل رفع الملف"
+        throw new Error(errorMessage)
       }
       const uploadJson = await uploadRes.json()
+      if (!uploadJson.success || !uploadJson.url) {
+        throw new Error(uploadJson.message || "فشل رفع الملف")
+      }
       mediaUrl = uploadJson.url
     } else {
       mediaUrl = fileOrUrl
@@ -477,7 +486,8 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({ mediaUrl, caption }),
     })
     if (!res.ok) {
-      throw new Error("Failed to send media")
+      const errorJson = await res.json().catch(() => ({}))
+      throw new Error(errorJson.message || "فشل إرسال الملف")
     }
   }
 

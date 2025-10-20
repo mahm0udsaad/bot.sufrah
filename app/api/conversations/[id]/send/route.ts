@@ -65,6 +65,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
     }
 
+    // IMPORTANT: Bot API expects customer phone number in E.164 format, not DB conversation ID
+    // Try to fetch the conversation to get the customer phone
+    let customerPhone: string = conversationId
+    try {
+      const conversation = await db.getConversation(restaurant.id, conversationId)
+      if (conversation && conversation.customerWa) {
+        customerPhone = conversation.customerWa
+        console.log(`[send] Resolved conversation ${conversationId} to phone: ${customerPhone}`)
+      }
+    } catch (error) {
+      console.log(`[send] Conversation not in local DB, using conversationId as phone: ${conversationId}`)
+    }
+
+    // Normalize to E.164 format with leading '+' (required by Bot API)
+    customerPhone = customerPhone.startsWith('+')
+      ? customerPhone
+      : `+${customerPhone.replace(/^\+?/, '')}`
+    
+    console.log(`[send] Using normalized phone: ${customerPhone}`)
+
     const body = await request.json()
     const message = body.message || body.content || body.text
 
@@ -72,8 +92,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, message: "message is required" }, { status: 400 })
     }
 
-    // Forward to bot API
-    const url = `${BOT_API_URL.replace(/\/$/, "")}/conversations/${encodeURIComponent(conversationId)}/send`
+    // Forward to bot API using customer phone number
+    const url = `${BOT_API_URL.replace(/\/$/, "")}/conversations/${encodeURIComponent(customerPhone)}/send`
 
     // Generate auth headers for bot API
     const botHeaders: HeadersInit = { "Content-Type": "application/json" }

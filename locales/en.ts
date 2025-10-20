@@ -1,0 +1,450 @@
+const en = {
+  common: {
+    brand: {
+      defaultName: "Sufrah Bot",
+    },
+    languageSwitcher: {
+      english: "English",
+      arabic: "Arabic",
+      toggleLabel: "Change language",
+    },
+    actions: {
+      save: "Save",
+      cancel: "Cancel",
+      edit: "Edit",
+      delete: "Delete",
+      confirm: "Confirm",
+      back: "Back",
+      close: "Close",
+      apply: "Apply",
+      search: "Search",
+    },
+    status: {
+      loading: "Loading",
+      empty: "No data available",
+    },
+    notifications: {
+      success: "Operation completed successfully",
+      error: "Something went wrong",
+    },
+  },
+  navigation: {
+    dashboard: "Dashboard",
+    chats: "Chats",
+    orders: "Orders",
+    ratings: "Ratings",
+    catalog: "Catalog",
+    botManagement: "Bot Management",
+    logs: "Logs",
+    usage: "Usage & Plan",
+    templates: "Templates",
+    settings: "Settings",
+    adminBots: "Admin Bots",
+    adminSection: "Admin",
+    searchPlaceholder: "Search conversations...",
+  },
+  dashboard: {
+    overview: {
+      title: "Dashboard",
+      subtitle: "Monitor your WhatsApp bot performance and manage your messaging quota",
+      stats: {
+        activeChats: {
+          title: "Active Chats",
+          description: "Currently active",
+        },
+        ordersToday: {
+          title: "Orders Today",
+          description: "New orders today",
+        },
+        messagesToday: {
+          title: "Messages Today",
+          description: "Sent and received",
+        },
+        activeTemplates: {
+          title: "Active Templates",
+          description: "Approved templates",
+        },
+      },
+      usage: {
+        title: "Usage Overview",
+        cta: "Upgrade Plan",
+        summary: "{used} / {limit} messages used",
+        currentCycle: "Current cycle usage",
+        resets: "Resets in {days} days",
+        remaining: "{count} remaining",
+      },
+      windows: {
+        title: "24h Windows & Status",
+        activeConversations: "Active conversations",
+        openConversations: "{count} open",
+        messagesToday: "Messages today",
+        messagesCount: "{count} sent",
+        alert: {
+          title: "Heads up!",
+          body: "You've used {percentage}% of your message quota",
+        },
+      },
+      activity: {
+        title: "Daily Activity (7 days)",
+        subtitle: "Messages and orders over time",
+        legend: {
+          messages: "Messages",
+          orders: "Orders",
+        },
+        days: {
+          mon: "Mon",
+          tue: "Tue",
+          wed: "Wed",
+          thu: "Thu",
+          fri: "Fri",
+          sat: "Sat",
+          sun: "Sun",
+        },
+      },
+      templates: {
+        title: "Template Usage",
+        subtitle: "Most used message templates this week",
+        fallback: {
+          welcome: "Welcome Message",
+          confirmation: "Order Confirmation",
+          delivery: "Delivery Update",
+          menu: "Menu Request",
+          payment: "Payment Link",
+        },
+      },
+      ordersSnapshot: {
+        title: "Orders Snapshot",
+        subtitle: "Current order status overview",
+        pending: "Pending",
+        preparing: "Preparing",
+        ready: "Ready",
+        delivered: "Delivered",
+      },
+    },
+  },
+  signin: {
+    header: {
+      title: "Welcome to Sufrah Bot",
+      subtitle: "Sign in to manage your WhatsApp ordering system",
+    },
+    card: {
+      phoneStep: {
+        title: "Sign In",
+        description: "Enter your phone number to get started",
+      },
+      verifyStep: {
+        title: "Verify Phone",
+        description: "Enter the verification code sent to {phone}",
+      },
+    },
+    alerts: {
+      codeSent: "Verification code sent to your phone",
+      codeResent: "New verification code sent",
+    },
+    form: {
+      phone: {
+        label: "Phone Number",
+        placeholder: "+1 (555) 123-4567",
+        helper: "Include your country code (e.g., +1 for US, +971 for UAE)",
+      },
+      code: {
+        label: "Verification Code",
+        placeholder: "123456",
+        helper: "Code sent to {phone}",
+      },
+    },
+    actions: {
+      sendCode: "Send Verification Code",
+      sending: "Sending Code...",
+      verify: "Verify & Sign In",
+      verifying: "Verifying...",
+      changePhone: "Change Phone Number",
+      resend: "Resend Code",
+    },
+    footer: {
+      terms: "By signing in, you agree to our Terms of Service and Privacy Policy",
+    },
+  },
+  orders: {
+    header: {
+      title: "Orders",
+      subtitle: "Track WhatsApp orders in real-time and manage fulfillment",
+    },
+    actions: {
+      export: "Export",
+      viewDetails: "View order details",
+    },
+    filters: {
+      statusPlaceholder: "Filter by status",
+      allStatuses: "All statuses",
+      searchPlaceholder: "Search by customer, phone, or order ID",
+    },
+    metrics: {
+      todaysOrders: { title: "Today's Orders" },
+      revenue: { title: "Revenue" },
+      avgValue: { title: "Avg. Order Value" },
+      completionRate: { title: "Completion Rate" },
+    },
+    table: {
+      title: "Orders",
+      subtitle: "Filtered by WhatsApp conversation mapping",
+      columns: {
+        order: "Order ID",
+        customer: "Customer",
+        status: "Status",
+        payment: "Payment",
+        total: "Total",
+        placed: "Placed",
+        actions: "Actions",
+      },
+      updateStatusPlaceholder: "Update status",
+      walkIn: "Walk-in",
+      noPhone: "No phone on file",
+      empty: "No orders match the current filters.",
+    },
+    dialog: {
+      title: "Order {id}",
+      viewPaymentLink: "View payment link",
+      itemsTitle: "Items",
+      itemQuantity: "Qty {qty}",
+      total: "Total",
+      payment: {
+        title: "Payment Information",
+        status: "Status",
+        method: "Method",
+        transaction: "Transaction ID",
+      },
+    },
+    loading: {
+      updating: "Updating order…",
+    },
+    toasts: {
+      loadFailed: "Unable to load orders feed",
+      statusUpdated: "Order status updated in real-time",
+      statusChangeSuccess: "Order {id} status updated",
+      updateFailed: "Unable to update order status",
+    },
+    status: {
+      draft: "Draft",
+      confirmed: "Confirmed",
+      preparing: "Preparing",
+      outForDelivery: "Out for delivery",
+      delivered: "Delivered",
+      cancelled: "Cancelled",
+    },
+    paymentStatus: {
+      pending: "Pending",
+      paid: "Paid",
+      failed: "Failed",
+      refunded: "Refunded",
+    },
+  },
+  catalog: {
+    header: {
+      title: "Catalog",
+      subtitle: "Manage products, categories, and branch availability",
+    },
+    categories: {
+      title: "Categories",
+      empty: "No categories found",
+    },
+    products: {
+      title: "Products",
+      count: "{count} items",
+      fallbackName: "Product",
+      noDescription: "No description",
+      emptyTitle: "No products available",
+      emptySubtitle: "Select a category to view products",
+    },
+    badges: {
+      delivery: "Delivery",
+      pickup: "Pickup",
+      dineIn: "Dine-in",
+      car: "Car",
+    },
+    branches: {
+      title: "Branches",
+      count: "{count} locations",
+      fallbackName: "Branch",
+      noAddress: "No address provided",
+      emptyTitle: "No branches available",
+      emptySubtitle: "Add your first branch location",
+    },
+  },
+  ratings: {
+    header: {
+      title: "Customer Ratings",
+      subtitle: "Review feedback trends and follow up with guests",
+    },
+    actions: {
+      export: "Export",
+      viewDetails: "View rating details",
+    },
+    filters: {
+      placeholder: "Filter by rating",
+      options: {
+        all: "All ratings",
+        five: "5 stars",
+        four: "4 stars",
+        three: "3 stars",
+        two: "2 stars",
+        one: "1 star",
+      },
+    },
+    metrics: {
+      total: { title: "Total Ratings" },
+      average: { title: "Average Rating" },
+      positive: { title: "Positive Ratings", hint: "4-5 stars" },
+      negative: { title: "Low Ratings", hint: "1-3 stars" },
+    },
+    distribution: {
+      title: "Rating Distribution",
+      entry: "{count} ({percentage}%)",
+    },
+    table: {
+      title: "Recent Ratings",
+      subtitle: "Customer feedback and reviews",
+      searchPlaceholder: "Search by customer or comment",
+      columns: {
+        customer: "Customer",
+        rating: "Rating",
+        comment: "Comment",
+        orderType: "Order type",
+        total: "Total",
+        date: "Date",
+        actions: "Actions",
+      },
+      guest: "Guest",
+      phoneMasked: "***{lastDigits}",
+      noValueShort: "—",
+      ratingOutOf: "{rating}/5",
+      noComment: "No comment",
+      empty: "No ratings match the current filters.",
+    },
+    dialog: {
+      title: "Rating Details",
+      summary: {
+        customerRating: "Customer rating",
+        outOf: "out of 5",
+        commentTitle: "Customer comment",
+      },
+      customer: {
+        name: "Customer name",
+        phone: "Phone number",
+        orderType: "Order type",
+        paymentMethod: "Payment method",
+        branch: "Branch",
+      },
+      timeline: {
+        title: "Timeline",
+        placed: "Order placed",
+        requested: "Rating requested",
+        submitted: "Rating submitted",
+      },
+      items: {
+        title: "Order items",
+        quantity: "Qty: {qty}",
+        unitPrice: "{price} each",
+      },
+      total: "Total amount",
+    },
+    toasts: {
+      loadFailed: "Unable to load ratings",
+      detailFailed: "Unable to load rating details",
+    },
+  },
+  templates: {
+    header: {
+      title: "WhatsApp Templates",
+      subtitle: "Manage approved message templates and submissions",
+    },
+    actions: {
+      create: "Create Template",
+      submit: "Submit for Approval",
+      cancel: "Cancel",
+      creating: "Creating...",
+      copy: "Copy",
+      edit: "Edit",
+      delete: "Delete",
+      confirmDelete: "Are you sure you want to delete this template?",
+    },
+    status: {
+      draft: "Draft",
+      pending: "Pending",
+      approved: "Approved",
+      rejected: "Rejected",
+    },
+    stats: {
+      total: "Total Templates",
+      approved: "Approved",
+      pending: "Pending",
+      totalUsage: "Total Usage",
+    },
+    filters: {
+      searchPlaceholder: "Search templates...",
+      categoryPlaceholder: "Select category",
+      allCategories: "All Categories",
+    },
+    categories: {
+      greeting: "Greeting",
+      order: "Order",
+      delivery: "Delivery",
+      menu: "Menu",
+      payment: "Payment",
+      support: "Support",
+    },
+    form: {
+      dialogTitle: "Create New Template",
+      name: {
+        label: "Template Name *",
+        placeholder: "Enter template name",
+      },
+      category: {
+        label: "Category *",
+        placeholder: "Select category",
+      },
+      headerType: {
+        label: "Header Type (Optional)",
+        placeholder: "Select header type",
+      },
+      headerContent: {
+        label: "Header Content",
+        placeholder: "Enter header content",
+      },
+      body: {
+        label: "Message Content *",
+        placeholder: "Enter your message template...",
+        helper: "Use {{variable_name}} for dynamic content",
+      },
+      footer: {
+        label: "Footer Text (Optional)",
+        placeholder: "Enter footer text",
+      },
+      headerTypes: {
+        text: "Text",
+        image: "Image",
+        document: "Document",
+        video: "Video",
+      },
+      variables: {
+        title: "Variables found:",
+        heading: "Variables:",
+      },
+    },
+    usage: {
+      used: "Used {count} times",
+    },
+    empty: {
+      title: "No templates found",
+      searchMessage: "Try adjusting your search or filters",
+      defaultMessage: "Create your first template to get started",
+    },
+    errors: {
+      requiredFields: "Please fill in all required fields",
+      createFailed: "Failed to create template",
+      network: "Network error occurred",
+    },
+  },
+} as const
+
+export default en

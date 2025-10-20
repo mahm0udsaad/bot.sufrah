@@ -268,23 +268,23 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
 
   return (
     <div className="flex flex-col h-full" dir="rtl">
-      {/* Header */}
-      <div className="p-4 border-b">
+      {/* Header - Hidden on mobile (we have a separate mobile header in ChatInterface) */}
+      <div className="p-3 md:p-4 border-b hidden lg:block">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
             <User className="h-5 w-5 text-primary" />
           </div>
           <div className="flex-1 min-w-0">
-            <h2 className="font-semibold text-lg truncate">
+            <h2 className="font-semibold text-base md:text-lg truncate">
               {conversation.customer_name || conversation.customer_phone}
             </h2>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs md:text-sm text-muted-foreground">
               <Phone className="h-3 w-3" />
               <span dir="ltr">{conversation.customer_phone}</span>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <Badge variant={conversation.status === "active" ? "default" : "secondary"}>
+            <Badge variant={conversation.status === "active" ? "default" : "secondary"} className="text-xs">
               {conversation.status === "active" ? "نشط" : "مغلق"}
             </Badge>
             {conversation.is_bot_active && (
@@ -295,9 +295,34 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
           </div>
         </div>
       </div>
+      
+      {/* Mobile Header - More compact */}
+      <div className="p-3 border-b lg:hidden bg-muted/30">
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+            <User className="h-4 w-4 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Phone className="h-3 w-3" />
+              <span dir="ltr">{conversation.customer_phone}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <Badge variant={conversation.status === "active" ? "default" : "secondary"} className="text-xs px-1.5 py-0">
+              {conversation.status === "active" ? "نشط" : "مغلق"}
+            </Badge>
+            {conversation.is_bot_active && (
+              <Badge variant="outline" className="text-xs px-1.5 py-0">
+                بوت
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Messages */}
-      <div className="overflow-y-scroll flex-1 p-4" onScrollCapture={handleScroll}>
+      <div className="overflow-y-scroll flex-1 p-3 md:p-4" onScrollCapture={handleScroll}>
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
@@ -310,7 +335,7 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
             </div>
           </div>
         ) : (
-          <div className="overflow-y-scroll space-y-4">
+          <div className="overflow-y-scroll space-y-2 md:space-y-3">
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -321,7 +346,7 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
               >
                 <div
                   className={cn(
-                    "max-w-[70%] rounded-lg p-3",
+                    "max-w-[85%] md:max-w-[75%] lg:max-w-[70%] rounded-lg p-2.5 md:p-3",
                     message.is_from_customer
                       ? "bg-secondary text-secondary-foreground"
                       : "bg-primary text-primary-foreground"
@@ -330,7 +355,7 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
                   {renderMessageContent(message)}
                   <div
                     className={cn(
-                      "text-xs mt-1 flex items-center gap-1",
+                      "text-[10px] md:text-xs mt-1 flex items-center gap-1",
                       message.is_from_customer
                         ? "text-secondary-foreground/70"
                         : "text-primary-foreground/70"
@@ -348,19 +373,19 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t">
+      <div className="p-2 md:p-3 lg:p-4 border-t bg-background">
         {/* File Preview */}
         {selectedFile && (
-          <div className="mb-3 p-3 bg-muted rounded-lg flex items-center justify-between">
+          <div className="mb-2 p-2 md:p-3 bg-muted rounded-lg flex items-center justify-between">
             <div className="flex items-center gap-2 flex-1 min-w-0">
               {selectedFile.type.startsWith("image/") ? (
-                <Image className="h-5 w-5 text-primary flex-shrink-0" />
+                <Image className="h-4 w-4 md:h-5 md:w-5 text-primary flex-shrink-0" />
               ) : (
-                <FileText className="h-5 w-5 text-primary flex-shrink-0" />
+                <FileText className="h-4 w-4 md:h-5 md:w-5 text-primary flex-shrink-0" />
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{selectedFile.name}</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs md:text-sm font-medium truncate">{selectedFile.name}</p>
+                <p className="text-[10px] md:text-xs text-muted-foreground">
                   {(selectedFile.size / 1024).toFixed(1)} KB
                 </p>
               </div>
@@ -370,39 +395,38 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
               size="icon"
               onClick={clearSelectedFile}
               disabled={uploading}
-              className="flex-shrink-0"
+              className="flex-shrink-0 h-7 w-7 md:h-9 md:w-9"
             >
-              <X className="h-4 w-4" />
+              <X className="h-3 w-3 md:h-4 md:w-4" />
             </Button>
           </div>
         )}
 
-        <div className="flex gap-2">
-          <div className="flex flex-col gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={sending || uploading}
-              title="إرفاق ملف"
-            >
-              <Paperclip className="h-5 w-5" />
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,.pdf,.doc,.docx,.txt"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-          </div>
+        <div className="flex gap-1.5 md:gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || uploading}
+            title="إرفاق ملف"
+            className="h-10 w-10 md:h-12 md:w-12 flex-shrink-0"
+          >
+            <Paperclip className="h-4 w-4 md:h-5 md:w-5" />
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,.pdf,.doc,.docx,.txt"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
           
           <Textarea
             value={messageText}
             onChange={(e) => setMessageText(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={selectedFile ? "تعليق اختياري..." : "اكتب رسالتك..."}
-            className="resize-none min-h-[60px] max-h-[120px]"
+            className="resize-none min-h-[40px] md:min-h-[48px] max-h-[100px] md:max-h-[120px] text-sm md:text-base"
             disabled={sending || uploading}
           />
           
@@ -410,24 +434,24 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
             onClick={handleSend}
             disabled={(!messageText.trim() && !selectedFile) || sending || uploading}
             size="icon"
-            className="h-[60px] w-[60px] flex-shrink-0"
+            className="h-10 w-10 md:h-12 md:w-12 flex-shrink-0"
           >
             {(sending || uploading) ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
+              <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" />
             ) : (
-              <Send className="h-5 w-5" />
+              <Send className="h-4 w-4 md:h-5 md:w-5" />
             )}
           </Button>
         </div>
         
-        <p className="text-xs text-muted-foreground mt-2">
+        <p className="text-[10px] md:text-xs text-muted-foreground mt-1.5 md:mt-2 hidden md:block">
           {selectedFile 
             ? `جاهز للإرسال: ${selectedFile.name}`
             : "اضغط Enter للإرسال، Shift+Enter لسطر جديد"}
         </p>
         
         {onSendMedia && (
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-[10px] md:text-xs text-muted-foreground mt-1 hidden md:block">
             يمكنك إرفاق صور أو مستندات (حتى 16 ميجابايت)
           </p>
         )}

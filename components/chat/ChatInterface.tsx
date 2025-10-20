@@ -9,9 +9,12 @@ import { OrderTracker } from "./OrderTracker"
 import { BotStatusIndicator } from "./BotStatusIndicator"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AlertCircle, RefreshCw } from "lucide-react"
+import { AlertCircle, RefreshCw, ArrowRight, Menu, Loader2, Bot } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 
 interface BotMessage {
   id: string
@@ -58,6 +61,8 @@ export function ChatInterface() {
   const [messages, setMessages] = useState<Record<string, BotMessage[]>>({})
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sendingMessage, setSendingMessage] = useState(false)
+  const [showMobileMessages, setShowMobileMessages] = useState(false)
+  const [togglingBot, setTogglingBot] = useState(false)
   const isInitializedRef = useRef(false)
 
   // Load messages for selected conversation
@@ -85,7 +90,13 @@ export function ChatInterface() {
   // Handle conversation selection
   const handleSelectConversation = (conversationId: string) => {
     setSelectedConversationId(conversationId)
+    setShowMobileMessages(true) // Show message view on mobile
     loadConversationMessages(conversationId)
+  }
+
+  // Handle back to conversation list on mobile
+  const handleBackToConversations = () => {
+    setShowMobileMessages(false)
   }
 
   // Handle sending a message
@@ -112,6 +123,7 @@ export function ChatInterface() {
 
   // Handle bot toggle for individual conversations
   const handleToggleConversationBot = async (conversationId: string, enabled: boolean) => {
+    setTogglingBot(true)
     try {
       const response = await fetch(`/api/conversations/${conversationId}/toggle-bot`, {
         method: "POST",
@@ -123,11 +135,17 @@ export function ChatInterface() {
         throw new Error("Failed to toggle bot for conversation")
       }
 
+      // Show success toast
+      toast.success(enabled ? "تم تشغيل البوت للمحادثة" : "تم إيقاف البوت للمحادثة")
+
       // The conversation will be updated via WebSocket events
       // No need to manually update state here
     } catch (error) {
       console.error("Failed to toggle conversation bot:", error)
+      toast.error("فشل تغيير حالة البوت")
       throw error
+    } finally {
+      setTogglingBot(false)
     }
   }
 
@@ -186,45 +204,55 @@ export function ChatInterface() {
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId)
 
   return (
-    <div className="flex flex-col h-full gap-4" dir="rtl">
-      {/* Header with Bot Toggle */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="flex flex-col h-full gap-3 md:gap-4" dir="rtl">
+      {/* Header with Bot Toggle - Hidden on mobile when viewing messages */}
+      <div className={cn(
+        "flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 md:gap-4",
+        showMobileMessages && "hidden lg:flex"
+      )}>
         <div>
-          <h1 className="text-2xl font-bold">محادثات واتساب</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-xl md:text-2xl font-bold">محادثات واتساب</h1>
+          <p className="text-xs md:text-sm text-muted-foreground">
             إدارة المحادثات مع العملاء في الوقت الفعلي
           </p>
         </div>
         <BotToggle />
       </div>
 
-      {/* Connection Status */}
-      {status === "connecting" && (
-        <Alert>
-          <RefreshCw className="h-4 w-4 animate-spin" />
-          <AlertDescription>جارٍ الاتصال بالبوت...</AlertDescription>
-        </Alert>
-      )}
-      
-      {status === "error" && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription className="flex items-center justify-between gap-2">
-            <span>{error || "فشل الاتصال بالبوت"}</span>
-            <Button variant="outline" size="sm" onClick={reconnect}>
-              إعادة الاتصال
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
+      {/* Connection Status - Hidden on mobile when viewing messages */}
+      <div className={cn(showMobileMessages && "hidden lg:block")}>
+        {status === "connecting" && (
+          <Alert>
+            <RefreshCw className="h-4 w-4 animate-spin" />
+            <AlertDescription>جارٍ الاتصال بالبوت...</AlertDescription>
+          </Alert>
+        )}
+        
+        {status === "error" && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between gap-2">
+              <span className="text-sm">{error || "فشل الاتصال بالبوت"}</span>
+              <Button variant="outline" size="sm" onClick={reconnect}>
+                إعادة الاتصال
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+      </div>
 
-      {/* Bot Status Overview */}
-      <BotStatusIndicator variant="compact" className="lg:hidden" />
+      {/* Bot Status Overview - Hidden on mobile when viewing messages */}
+      <div className={cn(showMobileMessages && "hidden lg:block")}>
+        <BotStatusIndicator variant="compact" className="lg:hidden" />
+      </div>
 
       {/* Chat Interface */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 min-h-0">
-        {/* Conversation List */}
-        <Card className="lg:col-span-1 overflow-hidden flex flex-col">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 md:gap-4 flex-1 min-h-0 overflow-hidden">
+        {/* Conversation List - Hidden on mobile when viewing messages */}
+        <Card className={cn(
+          "lg:col-span-1 overflow-hidden flex flex-col",
+          showMobileMessages ? "hidden lg:flex" : "flex"
+        )}>
           <ConversationList
             conversations={conversations}
             selectedId={selectedConversationId}
@@ -233,22 +261,85 @@ export function ChatInterface() {
           />
         </Card>
 
-        {/* Message Thread */}
-        <Card className="lg:col-span-2 overflow-hidden flex flex-col">
+        {/* Message Thread - Full screen on mobile when conversation is selected */}
+        <Card className={cn(
+          "overflow-hidden flex flex-col",
+          showMobileMessages 
+            ? "fixed inset-0 z-50 rounded-none lg:relative lg:z-auto lg:rounded-lg lg:col-span-2" 
+            : "hidden lg:flex lg:col-span-2"
+        )}>
           {selectedConversation ? (
-            <MessageThread
-              conversation={selectedConversation}
-              messages={messages[selectedConversation.id] || []}
-              loading={loadingMessages}
-              sending={sendingMessage}
-              onSendMessage={handleSendMessage}
-              onSendMedia={handleSendMedia}
-            />
+            <>
+              {/* Mobile Header with Back Button and Bot Toggle - Fixed at top */}
+              <div className="lg:hidden flex items-center gap-2 p-3 border-b bg-background/95 backdrop-blur sticky top-0 z-10 shadow-sm">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleBackToConversations}
+                  className="flex-shrink-0"
+                >
+                  <ArrowRight className="h-5 w-5" />
+                </Button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <h2 className="font-semibold text-sm truncate">
+                      {selectedConversation.customer_name || selectedConversation.customer_phone}
+                    </h2>
+                    <Badge 
+                      variant={selectedConversation.is_bot_active ? "default" : "secondary"} 
+                      className="text-[10px] px-1.5 py-0 gap-0.5 flex-shrink-0"
+                    >
+                      <Bot className="h-2.5 w-2.5" />
+                      {selectedConversation.is_bot_active ? "نشط" : "متوقف"}
+                    </Badge>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground truncate" dir="ltr">
+                    {selectedConversation.customer_phone}
+                  </p>
+                </div>
+                
+                {/* Bot Toggle Button for this conversation */}
+                <Button
+                  variant={selectedConversation.is_bot_active ? "destructive" : "default"}
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await handleToggleConversationBot(
+                        selectedConversation.id, 
+                        !selectedConversation.is_bot_active
+                      )
+                    } catch (error) {
+                      console.error("Failed to toggle bot:", error)
+                    }
+                  }}
+                  disabled={togglingBot}
+                  className="h-8 px-3 text-xs min-w-[65px] flex-shrink-0"
+                >
+                  {togglingBot ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <>
+                      <Bot className="h-3.5 w-3.5 ml-1" />
+                      {selectedConversation.is_bot_active ? "إيقاف" : "تشغيل"}
+                    </>
+                  )}
+                </Button>
+              </div>
+              
+              <MessageThread
+                conversation={selectedConversation}
+                messages={messages[selectedConversation.id] || []}
+                loading={loadingMessages}
+                sending={sendingMessage}
+                onSendMessage={handleSendMessage}
+                onSendMedia={handleSendMedia}
+              />
+            </>
           ) : (
-            <div className="flex items-center justify-center h-full text-muted-foreground">
+            <div className="flex items-center justify-center h-full text-muted-foreground p-4">
               <div className="text-center">
-                <p className="text-lg">اختر محادثة لعرض الرسائل</p>
-                <p className="text-sm mt-2">
+                <p className="text-base md:text-lg">اختر محادثة لعرض الرسائل</p>
+                <p className="text-xs md:text-sm mt-2">
                   {conversations.length === 0
                     ? "لا توجد محادثات حالياً"
                     : `${conversations.length} محادثة متاحة`}
@@ -258,15 +349,15 @@ export function ChatInterface() {
           )}
         </Card>
 
-        {/* Right Sidebar: Bot Status & Orders */}
-        <div className="lg:col-span-1 space-y-4 hidden lg:block">
+        {/* Right Sidebar: Bot Status & Orders - Desktop only */}
+        <div className="lg:col-span-1 space-y-4 hidden lg:flex lg:flex-col">
           <BotStatusIndicator />
           <OrderTracker conversationId={selectedConversationId} />
         </div>
       </div>
 
-      {/* Mobile Order Tracker */}
-      {selectedConversationId && (
+      {/* Mobile Order Tracker - Only shown when a conversation is selected and NOT in message view */}
+      {selectedConversationId && !showMobileMessages && (
         <div className="lg:hidden">
           <OrderTracker conversationId={selectedConversationId} />
         </div>

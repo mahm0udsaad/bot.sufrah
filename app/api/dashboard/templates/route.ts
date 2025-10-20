@@ -1,38 +1,19 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { cookies } from "next/headers"
-import { jwtVerify } from "jose"
 import prisma from "@/lib/prisma"
-
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key-change-in-production")
-
-async function getUserFromToken(request: NextRequest) {
-  try {
-    const cookieStore = await cookies()
-    const token = cookieStore.get("auth-token")?.value
-
-    if (!token) {
-      return null
-    }
-
-    const { payload } = await jwtVerify(token, JWT_SECRET)
-    return payload.userId as string
-  } catch (error) {
-    return null
-  }
-}
+import { getAuthenticatedUser } from "@/lib/server-auth"
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getUserFromToken(request)
+    const user = await getAuthenticatedUser(request)
 
-    if (!userId) {
+    if (!user) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
     // Get template usage analytics
     const templateUsage = await prisma.template.findMany({
       where: {
-        user_id: userId,
+        user_id: user.id,
         status: "approved",
         usage_count: { gt: 0 },
       },

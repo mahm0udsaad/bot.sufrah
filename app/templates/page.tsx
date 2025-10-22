@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useMemo } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AuthGuard } from "@/components/auth-guard"
 import { Button } from "@/components/ui/button"
@@ -14,198 +14,188 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Search, Plus, Edit, Trash2, Copy, MessageSquare, CheckCircle2, Clock, XCircle, Loader2 } from "lucide-react"
-import { useAuth } from "@/lib/auth"
+import { Search, Plus, Edit, Trash2, Copy, MessageSquare, CheckCircle2, Clock, XCircle, Loader2, RefreshCw } from "lucide-react"
+import { useTemplates, type TemplateCategory, type TemplateStatus } from "@/hooks/use-dashboard-api"
 import { useI18n } from "@/hooks/use-i18n"
 import { cn } from "@/lib/utils"
+import { toast } from "sonner"
 
-interface Template {
-  id: string
-  name: string
-  category: string
-  status: "draft" | "pending" | "approved" | "rejected"
-  language: string
-  body_text: string
-  header_type?: string
-  header_content?: string
-  footer_text?: string
-  variables: string[]
-  usage_count: number
-  created_at: string
-  updated_at: string
+const statusColors: Record<TemplateStatus, string> = {
+  APPROVED: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  PENDING: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  REJECTED: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
 }
 
-const statusColors = {
-  draft: "bg-gray-100 text-gray-800",
-  approved: "bg-green-100 text-green-800",
-  pending: "bg-yellow-100 text-yellow-800",
-  rejected: "bg-red-100 text-red-800",
-}
-
-const statusIcons = {
-  draft: Edit,
-  approved: CheckCircle2,
-  pending: Clock,
-  rejected: XCircle,
+const statusIcons: Record<TemplateStatus, any> = {
+  APPROVED: CheckCircle2,
+  PENDING: Clock,
+  REJECTED: XCircle,
 }
 
 export default function TemplatesPage() {
-  const { user } = useAuth()
   const { t, dir, locale } = useI18n()
-  const [templates, setTemplates] = useState<Template[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState("all")
+  const [selectedCategory, setSelectedCategory] = useState<TemplateCategory | "ALL">("ALL")
+  const [selectedStatus, setSelectedStatus] = useState<TemplateStatus | "ALL">("ALL")
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [error, setError] = useState("")
+  const [editingTemplate, setEditingTemplate] = useState<any>(null)
+  const [formError, setFormError] = useState("")
   const isRtl = dir === "rtl"
 
   // Form state
   const [formData, setFormData] = useState({
     name: "",
-    category: "",
+    category: "" as TemplateCategory,
     body_text: "",
-    header_type: "",
-    header_content: "",
     footer_text: "",
+    language: locale === 'ar' ? 'ar' : 'en',
   })
 
-  // Load templates
-  useEffect(() => {
-    if (!user) return
+  // Fetch templates with the new API
+  const {
+    data: templatesData,
+    loading,
+    error,
+    createTemplate,
+    updateTemplate,
+    deleteTemplate,
+    refetch,
+  } = useTemplates({
+    status: selectedStatus === "ALL" ? undefined : selectedStatus,
+    category: selectedCategory === "ALL" ? undefined : selectedCategory,
+    locale: locale as 'en' | 'ar',
+  })
 
-    const loadTemplates = async () => {
-      try {
-        const response = await fetch("/api/templates")
-        if (response.ok) {
-          const data = await response.json()
-          setTemplates(data)
-        }
-      } catch (error) {
-        console.error("Failed to load templates:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadTemplates()
-  }, [user])
+  const templates = templatesData?.templates || []
 
   const handleCreateTemplate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.name || !formData.category || !formData.body_text) {
-      setError(t("templates.errors.requiredFields"))
+      setFormError(t("templates.errors.requiredFields") || "Please fill in all required fields")
       return
     }
 
-    setCreating(true)
-    setError("")
+    setFormError("")
 
-    try {
-      const response = await fetch("/api/templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      })
+    const result = await createTemplate({
+      name: formData.name,
+      category: formData.category,
+      language: formData.language,
+      body_text: formData.body_text,
+      footer_text: formData.footer_text || undefined,
+      variables: extractVariables(formData.body_text),
+    })
 
-      if (response.ok) {
-        const newTemplate = await response.json()
-        setTemplates((prev) => [newTemplate, ...prev])
-        setIsCreateDialogOpen(false)
-        setFormData({
-          name: "",
-          category: "",
-          body_text: "",
-          header_type: "",
-          header_content: "",
-          footer_text: "",
-        })
-      } else {
-        const data = await response.json()
-        setError(data.message || t("templates.errors.createFailed"))
-      }
-    } catch (error) {
-      setError(t("templates.errors.network"))
-    } finally {
-      setCreating(false)
+    if (result?.error) {
+      setFormError(result.error)
+      toast.error(t("templates.errors.createFailed") || "Failed to create template")
+    } else {
+      toast.success(t("templates.toasts.created") || "Template created successfully")
+      setIsCreateDialogOpen(false)
+      resetForm()
     }
   }
 
-  const handleDeleteTemplate = async (templateId: string) => {
-    if (!confirm(t("templates.actions.confirmDelete"))) return
+  const handleUpdateTemplate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingTemplate) return
 
-    try {
-      const response = await fetch(`/api/templates/${templateId}`, {
-        method: "DELETE",
-      })
+    setFormError("")
 
-      if (response.ok) {
-        setTemplates((prev) => prev.filter((t) => t.id !== templateId))
-      }
-    } catch (error) {
-      console.error("Failed to delete template:", error)
+    const result = await updateTemplate(editingTemplate.id, {
+      name: formData.name,
+      category: formData.category,
+      body_text: formData.body_text,
+      footer_text: formData.footer_text || undefined,
+      variables: extractVariables(formData.body_text),
+    })
+
+    if (result?.error) {
+      setFormError(result.error)
+      toast.error(t("templates.errors.updateFailed") || "Failed to update template")
+    } else {
+      toast.success(t("templates.toasts.updated") || "Template updated successfully")
+      setEditingTemplate(null)
+      resetForm()
     }
   }
 
-  const handleCopyTemplate = (template: Template) => {
-    navigator.clipboard.writeText(template.body_text)
-    // You could add a toast notification here
+  const handleDeleteTemplate = async (templateId: string, templateName: string) => {
+    if (!confirm(t("templates.actions.confirmDelete", { values: { name: templateName } }) || `Delete ${templateName}?`)) return
+
+    const result = await deleteTemplate(templateId)
+    
+    if (result?.error) {
+      toast.error(t("templates.errors.deleteFailed") || "Failed to delete template")
+    } else {
+      toast.success(t("templates.toasts.deleted") || "Template deleted successfully")
+    }
   }
 
-  const categories = useMemo(
-    () => [
-      { value: "greeting", label: t("templates.categories.greeting") },
-      { value: "order", label: t("templates.categories.order") },
-      { value: "delivery", label: t("templates.categories.delivery") },
-      { value: "menu", label: t("templates.categories.menu") },
-      { value: "payment", label: t("templates.categories.payment") },
-      { value: "support", label: t("templates.categories.support") },
-    ],
-    [t],
-  )
+  const handleCopyTemplate = (template: any) => {
+    navigator.clipboard.writeText(template.bodyText)
+    toast.success(t("templates.toasts.copied") || "Template copied to clipboard")
+  }
 
-  const headerTypeOptions = useMemo(
-    () => [
-      { value: "text", label: t("templates.form.headerTypes.text") },
-      { value: "image", label: t("templates.form.headerTypes.image") },
-      { value: "document", label: t("templates.form.headerTypes.document") },
-      { value: "video", label: t("templates.form.headerTypes.video") },
-    ],
-    [t],
-  )
+  const handleEditClick = (template: any) => {
+    setEditingTemplate(template)
+    setFormData({
+      name: template.name,
+      category: template.category,
+      body_text: template.bodyText,
+      footer_text: template.footerText || "",
+      language: template.language,
+    })
+  }
 
-  const statusLabels = useMemo(
-    () => ({
-      draft: t("templates.status.draft"),
-      pending: t("templates.status.pending"),
-      approved: t("templates.status.approved"),
-      rejected: t("templates.status.rejected"),
-    }),
-    [t],
-  )
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      category: "" as TemplateCategory,
+      body_text: "",
+      footer_text: "",
+      language: locale === 'ar' ? 'ar' : 'en',
+    })
+    setFormError("")
+  }
+
+  const categories: { value: TemplateCategory; label: string }[] = [
+    { value: "MARKETING", label: t("templates.categories.marketing") || "Marketing" },
+    { value: "UTILITY", label: t("templates.categories.utility") || "Utility" },
+    { value: "AUTHENTICATION", label: t("templates.categories.authentication") || "Authentication" },
+    { value: "ORDER_STATUS", label: t("templates.categories.orderStatus") || "Order Status" },
+    { value: "ORDER_UPDATE", label: t("templates.categories.orderUpdate") || "Order Update" },
+  ]
+
+  const statusOptions: { value: TemplateStatus; label: string }[] = [
+    { value: "APPROVED", label: t("templates.status.approved") || "Approved" },
+    { value: "PENDING", label: t("templates.status.pending") || "Pending" },
+    { value: "REJECTED", label: t("templates.status.rejected") || "Rejected" },
+  ]
 
   const extractVariables = (text: string): string[] => {
     const matches = text.match(/\{\{([^}]+)\}\}/g)
-    return matches ? matches.map((match) => match.slice(2, -2)) : []
+    return matches ? matches.map((match) => match.slice(2, -2).trim()) : []
   }
 
   const filteredTemplates = templates.filter((template) => {
-    const matchesSearch =
-      template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      template.body_text.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesCategory = selectedCategory === "all" || template.category === selectedCategory
-    return matchesSearch && matchesCategory
+    const query = searchQuery.trim().toLowerCase()
+    if (!query) return true
+    
+    return (
+      template.name.toLowerCase().includes(query) ||
+      template.bodyText.toLowerCase().includes(query)
+    )
   })
 
   const stats = {
     total: templates.length,
-    approved: templates.filter((t) => t.status === "approved").length,
-    pending: templates.filter((t) => t.status === "pending").length,
-    totalUsage: templates.reduce((sum, t) => sum + t.usage_count, 0),
+    approved: templates.filter((t) => t.status === "APPROVED").length,
+    pending: templates.filter((t) => t.status === "PENDING").length,
+    rejected: templates.filter((t) => t.status === "REJECTED").length,
   }
 
-  if (loading) {
+  if (loading && templates.length === 0) {
     return (
       <AuthGuard>
         <DashboardLayout>
@@ -223,154 +213,130 @@ export default function TemplatesPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">{t("templates.header.title")}</h1>
-              <p className="text-muted-foreground">{t("templates.header.subtitle")}</p>
+              <h1 className="text-2xl font-bold text-foreground">{t("templates.header.title") || "Message Templates"}</h1>
+              <p className="text-muted-foreground">{t("templates.header.subtitle") || "Manage WhatsApp message templates"}</p>
             </div>
-            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2")} />
-                  {t("templates.actions.create")}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>{t("templates.form.dialogTitle")}</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleCreateTemplate} className="space-y-4">
-                  {error && (
-                    <Alert variant="destructive">
-                      <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                  )}
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <RefreshCw className={cn("h-4 w-4", loading && "animate-spin", isRtl ? "ml-2" : "mr-2")} />
+                {t("templates.actions.refresh") || "Refresh"}
+              </Button>
+              <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2")} />
+                    {t("templates.actions.create") || "Create Template"}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>{t("templates.form.dialogTitle") || "Create New Template"}</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleCreateTemplate} className="space-y-4">
+                    {formError && (
+                      <Alert variant="destructive">
+                        <AlertDescription>{formError}</AlertDescription>
+                      </Alert>
+                    )}
 
-                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="template-name">{t("templates.form.name.label") || "Template Name"}</Label>
+                        <Input
+                          id="template-name"
+                          dir={dir}
+                          placeholder={t("templates.form.name.placeholder") || "e.g., Welcome Message"}
+                          value={formData.name}
+                          onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="category">{t("templates.form.category.label") || "Category"}</Label>
+                        <Select
+                          value={formData.category}
+                          onValueChange={(value) => setFormData((prev) => ({ ...prev, category: value as TemplateCategory }))}
+                        >
+                          <SelectTrigger dir={dir}>
+                            <SelectValue placeholder={t("templates.form.category.placeholder") || "Select category"} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {categories.map((category) => (
+                              <SelectItem key={category.value} value={category.value}>
+                                {category.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
                     <div>
-                      <Label htmlFor="template-name">{t("templates.form.name.label")}</Label>
-                      <Input
-                        id="template-name"
+                      <Label htmlFor="content">{t("templates.form.body.label") || "Message Content"}</Label>
+                      <Textarea
+                        id="content"
                         dir={dir}
-                        placeholder={t("templates.form.name.placeholder")}
-                        value={formData.name}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                        placeholder={t("templates.form.body.placeholder") || "Enter your message template..."}
+                        className="min-h-32"
+                        value={formData.body_text}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, body_text: e.target.value }))}
                         required
                       />
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {t("templates.form.body.helper") || "Use {{variable}} for dynamic content"}
+                      </p>
+                      {formData.body_text && extractVariables(formData.body_text).length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-sm font-medium">{t("templates.form.variables.title") || "Variables found:"}</p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {extractVariables(formData.body_text).map((variable, index) => (
+                              <Badge key={index} variant="secondary" className="text-xs">
+                                {`{{${variable}}}`}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <Label htmlFor="category">{t("templates.form.category.label")}</Label>
-                      <Select
-                        value={formData.category}
-                        onValueChange={(value) => setFormData((prev) => ({ ...prev, category: value }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder={t("templates.form.category.placeholder")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((category) => (
-                            <SelectItem key={category.value} value={category.value}>
-                              {category.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
 
-                  <div>
-                    <Label htmlFor="header-type">{t("templates.form.headerType.label")}</Label>
-                    <Select
-                      value={formData.header_type}
-                      onValueChange={(value) => setFormData((prev) => ({ ...prev, header_type: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder={t("templates.form.headerType.placeholder")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {headerTypeOptions.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {formData.header_type && (
                     <div>
-                      <Label htmlFor="header-content">{t("templates.form.headerContent.label")}</Label>
+                      <Label htmlFor="footer">{t("templates.form.footer.label") || "Footer (Optional)"}</Label>
                       <Input
-                        id="header-content"
+                        id="footer"
                         dir={dir}
-                        placeholder={t("templates.form.headerContent.placeholder")}
-                        value={formData.header_content}
-                        onChange={(e) => setFormData((prev) => ({ ...prev, header_content: e.target.value }))}
+                        placeholder={t("templates.form.footer.placeholder") || "e.g., © Your Restaurant 2024"}
+                        value={formData.footer_text}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, footer_text: e.target.value }))}
                       />
                     </div>
-                  )}
 
-                  <div>
-                    <Label htmlFor="content">{t("templates.form.body.label")}</Label>
-                    <Textarea
-                      id="content"
-                      dir={dir}
-                      placeholder={t("templates.form.body.placeholder")}
-                      className="min-h-32"
-                      value={formData.body_text}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, body_text: e.target.value }))}
-                      required
-                    />
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {t("templates.form.body.helper")}
-                    </p>
-                    {formData.body_text && (
-                      <div className="mt-2">
-                        <p className="text-sm font-medium">{t("templates.form.variables.title")}</p>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {extractVariables(formData.body_text).map((variable) => (
-                            <Badge key={variable} variant="secondary" className="text-xs">
-                              {`{{${variable}}}`}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <Label htmlFor="footer">{t("templates.form.footer.label")}</Label>
-                    <Input
-                      id="footer"
-                      dir={dir}
-                      placeholder={t("templates.form.footer.placeholder")}
-                      value={formData.footer_text}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, footer_text: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setIsCreateDialogOpen(false)}
-                      disabled={creating}
-                    >
-                      {t("templates.actions.cancel")}
-                    </Button>
-                    <Button type="submit" disabled={creating}>
-                      {creating ? (
-                        <>
-                          <Loader2 className={cn("h-4 w-4 animate-spin", isRtl ? "ml-2" : "mr-2")} />
-                          {t("templates.actions.creating")}
-                        </>
-                      ) : (
-                        t("templates.actions.submit")
-                      )}
-                    </Button>
-                  </div>
-                </form>
-              </DialogContent>
-            </Dialog>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setIsCreateDialogOpen(false)
+                          resetForm()
+                        }}
+                      >
+                        {t("templates.actions.cancel") || "Cancel"}
+                      </Button>
+                      <Button type="submit">
+                        {t("templates.actions.submit") || "Create Template"}
+                      </Button>
+                    </div>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
+
+          {/* Error Display */}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
@@ -378,8 +344,8 @@ export default function TemplatesPage() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.total")}</p>
-                    <p className="text-2xl font-bold">{stats.total.toLocaleString(locale)}</p>
+                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.total") || "Total Templates"}</p>
+                    <p className="text-2xl font-bold">{stats.total}</p>
                   </div>
                   <MessageSquare className="h-8 w-8 text-blue-600" />
                 </div>
@@ -389,8 +355,8 @@ export default function TemplatesPage() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.approved")}</p>
-                    <p className="text-2xl font-bold text-green-600">{stats.approved.toLocaleString(locale)}</p>
+                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.approved") || "Approved"}</p>
+                    <p className="text-2xl font-bold text-green-600">{stats.approved}</p>
                   </div>
                   <CheckCircle2 className="h-8 w-8 text-green-600" />
                 </div>
@@ -400,8 +366,8 @@ export default function TemplatesPage() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.pending")}</p>
-                    <p className="text-2xl font-bold text-yellow-600">{stats.pending.toLocaleString(locale)}</p>
+                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.pending") || "Pending"}</p>
+                    <p className="text-2xl font-bold text-yellow-600">{stats.pending}</p>
                   </div>
                   <Clock className="h-8 w-8 text-yellow-600" />
                 </div>
@@ -411,12 +377,10 @@ export default function TemplatesPage() {
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.totalUsage")}</p>
-                    <p className="text-2xl font-bold">{stats.totalUsage.toLocaleString(locale)}</p>
+                    <p className="text-sm font-medium text-muted-foreground">{t("templates.stats.rejected") || "Rejected"}</p>
+                    <p className="text-2xl font-bold text-red-600">{stats.rejected}</p>
                   </div>
-                  <div className="h-8 w-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <span className="text-purple-600 font-bold text-sm">📊</span>
-                  </div>
+                  <XCircle className="h-8 w-8 text-red-600" />
                 </div>
               </CardContent>
             </Card>
@@ -433,21 +397,34 @@ export default function TemplatesPage() {
               />
               <Input
                 dir={dir}
-                placeholder={t("templates.filters.searchPlaceholder")}
+                placeholder={t("templates.filters.searchPlaceholder") || "Search templates..."}
                 className={cn(isRtl ? "pr-10 pl-3 text-right" : "pl-10")}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+            <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as any)}>
               <SelectTrigger className="w-48" dir={dir}>
-                <SelectValue placeholder={t("templates.filters.categoryPlaceholder")} />
+                <SelectValue placeholder={t("templates.filters.categoryPlaceholder") || "All categories"} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{t("templates.filters.allCategories")}</SelectItem>
+                <SelectItem value="ALL">{t("templates.filters.allCategories") || "All Categories"}</SelectItem>
                 {categories.map((category) => (
                   <SelectItem key={category.value} value={category.value}>
                     {category.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedStatus} onValueChange={(value) => setSelectedStatus(value as any)}>
+              <SelectTrigger className="w-40" dir={dir}>
+                <SelectValue placeholder={t("templates.filters.statusPlaceholder") || "All statuses"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">{t("templates.filters.allStatuses") || "All Statuses"}</SelectItem>
+                {statusOptions.map((status) => (
+                  <SelectItem key={status.value} value={status.value}>
+                    {status.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -457,39 +434,37 @@ export default function TemplatesPage() {
           {/* Templates Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredTemplates.map((template) => {
-              const StatusIcon = statusIcons[template.status as keyof typeof statusIcons]
-              const variables = extractVariables(template.body_text)
+              const StatusIcon = statusIcons[template.status]
+              const variables = template.variables || []
 
               return (
                 <Card key={template.id} className="hover:shadow-md transition-shadow">
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
-                      <div>
+                      <div className="flex-1">
                         <CardTitle className="text-lg">{template.name}</CardTitle>
                         <Badge variant="outline" className="mt-1 capitalize">
-                          {t(`templates.categories.${template.category}`, {
-                            defaultValue: template.category,
-                          })}
+                          {template.category.replace(/_/g, ' ')}
                         </Badge>
                       </div>
-                      <Badge className={statusColors[template.status as keyof typeof statusColors]}>
+                      <Badge className={statusColors[template.status]}>
                         <StatusIcon className={cn("h-3 w-3", isRtl ? "ml-1" : "mr-1")} />
-                        {statusLabels[template.status]}
+                        {template.status}
                       </Badge>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
                       <div className="bg-muted/50 p-3 rounded-lg">
-                        <p className="text-sm line-clamp-3">{template.body_text}</p>
+                        <p className="text-sm line-clamp-3">{template.bodyText}</p>
                       </div>
 
                       {variables.length > 0 && (
                         <div>
-                          <p className="mb-2 text-sm font-medium">{t("templates.form.variables.heading")}</p>
+                          <p className="mb-2 text-sm font-medium">{t("templates.form.variables.heading") || "Variables:"}</p>
                           <div className="flex flex-wrap gap-1">
-                            {variables.map((variable) => (
-                              <Badge key={variable} variant="secondary" className="text-xs">
+                            {variables.map((variable, index) => (
+                              <Badge key={index} variant="secondary" className="text-xs">
                                 {`{{${variable}}}`}
                               </Badge>
                             ))}
@@ -498,34 +473,34 @@ export default function TemplatesPage() {
                       )}
 
                       <div className="flex items-center justify-between text-sm text-muted-foreground">
-                        <span>
-                          {t("templates.usage.used", {
-                            values: { count: template.usage_count.toLocaleString(locale) },
-                          })}
-                        </span>
-                        <span>{new Date(template.updated_at).toLocaleDateString(locale)}</span>
+                        <span>{template.language.toUpperCase()}</span>
+                        <span>{new Date(template.updatedAt).toLocaleDateString(locale)}</span>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          className="flex-1 bg-transparent"
+                          className="flex-1"
                           onClick={() => handleCopyTemplate(template)}
-                          aria-label={t("templates.actions.copy")}
+                          aria-label={t("templates.actions.copy") || "Copy"}
                         >
                           <Copy className={cn("h-3 w-3", isRtl ? "ml-1" : "mr-1")} />
-                          {t("templates.actions.copy")}
+                          {t("templates.actions.copy") || "Copy"}
                         </Button>
-                        <Button variant="outline" size="sm" aria-label={t("templates.actions.edit")}
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleEditClick(template)}
+                          aria-label={t("templates.actions.edit") || "Edit"}
                         >
                           <Edit className="h-3 w-3" />
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDeleteTemplate(template.id)}
-                          aria-label={t("templates.actions.delete")}
+                          onClick={() => handleDeleteTemplate(template.id, template.name)}
+                          aria-label={t("templates.actions.delete") || "Delete"}
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>
@@ -540,21 +515,106 @@ export default function TemplatesPage() {
           {filteredTemplates.length === 0 && (
             <div className="text-center py-12">
               <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">{t("templates.empty.title")}</h3>
+              <h3 className="text-lg font-medium mb-2">{t("templates.empty.title") || "No templates found"}</h3>
               <p className="text-muted-foreground mb-4">
-                {searchQuery || selectedCategory !== "all"
-                  ? t("templates.empty.searchMessage")
-                  : t("templates.empty.defaultMessage")}
+                {searchQuery || selectedCategory !== "ALL" || selectedStatus !== "ALL"
+                  ? t("templates.empty.searchMessage") || "Try adjusting your filters"
+                  : t("templates.empty.defaultMessage") || "Create your first template to get started"}
               </p>
-              {!searchQuery && selectedCategory === "all" && (
+              {!searchQuery && selectedCategory === "ALL" && selectedStatus === "ALL" && (
                 <Button onClick={() => setIsCreateDialogOpen(true)}>
                   <Plus className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2")} />
-                  {t("templates.actions.create")}
+                  {t("templates.actions.create") || "Create Template"}
                 </Button>
               )}
             </div>
           )}
         </div>
+
+        {/* Edit Dialog */}
+        <Dialog open={!!editingTemplate} onOpenChange={(open) => !open && setEditingTemplate(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{t("templates.form.editTitle") || "Edit Template"}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleUpdateTemplate} className="space-y-4">
+              {formError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{formError}</AlertDescription>
+                </Alert>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="edit-name">{t("templates.form.name.label") || "Template Name"}</Label>
+                  <Input
+                    id="edit-name"
+                    dir={dir}
+                    value={formData.name}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="edit-category">{t("templates.form.category.label") || "Category"}</Label>
+                  <Select
+                    value={formData.category}
+                    onValueChange={(value) => setFormData((prev) => ({ ...prev, category: value as TemplateCategory }))}
+                  >
+                    <SelectTrigger dir={dir}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((category) => (
+                        <SelectItem key={category.value} value={category.value}>
+                          {category.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="edit-content">{t("templates.form.body.label") || "Message Content"}</Label>
+                <Textarea
+                  id="edit-content"
+                  dir={dir}
+                  className="min-h-32"
+                  value={formData.body_text}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, body_text: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="edit-footer">{t("templates.form.footer.label") || "Footer (Optional)"}</Label>
+                <Input
+                  id="edit-footer"
+                  dir={dir}
+                  value={formData.footer_text}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, footer_text: e.target.value }))}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setEditingTemplate(null)
+                    resetForm()
+                  }}
+                >
+                  {t("templates.actions.cancel") || "Cancel"}
+                </Button>
+                <Button type="submit">
+                  {t("templates.actions.save") || "Save Changes"}
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </DashboardLayout>
     </AuthGuard>
   )

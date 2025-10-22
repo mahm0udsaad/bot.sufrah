@@ -8,250 +8,126 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Search, Download, Eye, Phone, Clock, MapPin, Loader2, Package, DollarSign, User2 } from "lucide-react"
+import { Search, Download, RefreshCw, Eye, Clock, Loader2, Package, DollarSign, AlertTriangle, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
-import { useAuth } from "@/lib/auth"
-import { RealtimeProvider, useRealtime } from "@/contexts/realtime-context"
-import { cn, normalizeCurrencyCode } from "@/lib/utils"
-import { useBotWebSocket } from "@/contexts/bot-websocket-context"
-import { BotWebSocketProvider } from "@/contexts/bot-websocket-context"
+import { useOrdersPaginated, useOrderStats } from "@/hooks/use-dashboard-api"
+import { updateOrderStatus, type Order, type OrderStatus } from "@/lib/dashboard-api"
 import { useI18n } from "@/hooks/use-i18n"
+import { cn } from "@/lib/utils"
+import { useAuth } from "@/lib/auth"
 
-const STATUS_STYLES: Record<string, { labelKey: string; badge: string }> = {
-  DRAFT: { labelKey: "orders.status.draft", badge: "bg-gray-100 text-gray-800" },
-  CONFIRMED: { labelKey: "orders.status.confirmed", badge: "bg-blue-100 text-blue-800" },
-  PREPARING: { labelKey: "orders.status.preparing", badge: "bg-yellow-100 text-yellow-800" },
-  OUT_FOR_DELIVERY: { labelKey: "orders.status.outForDelivery", badge: "bg-indigo-100 text-indigo-800" },
-  DELIVERED: { labelKey: "orders.status.delivered", badge: "bg-green-100 text-green-800" },
-  CANCELLED: { labelKey: "orders.status.cancelled", badge: "bg-red-100 text-red-800" },
-}
-
-const PAYMENT_STATUS_STYLES: Record<string, { labelKey: string; badge: string }> = {
-  PENDING: { labelKey: "orders.paymentStatus.pending", badge: "bg-yellow-100 text-yellow-800" },
-  PAID: { labelKey: "orders.paymentStatus.paid", badge: "bg-green-100 text-green-800" },
-  FAILED: { labelKey: "orders.paymentStatus.failed", badge: "bg-red-100 text-red-800" },
-  REFUNDED: { labelKey: "orders.paymentStatus.refunded", badge: "bg-gray-100 text-gray-800" },
-}
-
-interface OrderItem {
-  id: string
-  name: string
-  qty: number
-  unitCents: number
-  totalCents: number
-}
-
-interface OrderRecord {
-  id: string
-  status: string
-  totalCents: number
-  currency: string
-  createdAt: string
-  updatedAt: string
-  conversationId?: string | null
-  restaurantId: string
-  meta?: Record<string, any> | null
-  items: OrderItem[]
-}
-
-interface OrderStatsResponse {
-  todays_orders: number
-  total_revenue: number
-  avg_order_value: number
-  completion_rate: number
-}
-
-function formatCurrency(amountCents: number, currency: string) {
-  const code = normalizeCurrencyCode(currency)
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: code,
-    }).format((amountCents || 0) / 100)
-  } catch {
-    const amount = ((amountCents || 0) / 100).toFixed(2)
-    return `${amount} ${code}`
-  }
-}
-
-function deriveCustomerName(order: OrderRecord, fallback: string) {
-  return (
-    order.meta?.customer_name ||
-    order.meta?.customerName ||
-    order.meta?.name ||
-    order.meta?.customer ||
-    fallback
-  )
-}
-
-function deriveCustomerPhone(order: OrderRecord, fallback: string) {
-  const value =
-    order.meta?.customer_phone ||
-    order.meta?.phone ||
-    order.meta?.customerPhone ||
-    order.meta?.customer_contact ||
-    fallback
-  return typeof value === "string" ? value : fallback
-}
-
-function normalizeStatus(status: string | undefined) {
-  return (status || "DRAFT").toUpperCase()
+const STATUS_STYLES: Record<OrderStatus, { badge: string }> = {
+  CONFIRMED: { badge: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
+  PREPARING: { badge: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
+  OUT_FOR_DELIVERY: { badge: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200" },
+  DELIVERED: { badge: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
+  CANCELLED: { badge: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
 }
 
 function OrdersContent() {
   const { user } = useAuth()
-  const { subscribeToOrders } = useRealtime()
-  const { subscribeToOrderEvents } = useBotWebSocket()
   const { t, dir, locale } = useI18n()
-
-  const [orders, setOrders] = useState<OrderRecord[]>([])
-  const [stats, setStats] = useState<OrderStatsResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL")
   const [searchQuery, setSearchQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState("ALL")
-  const [selectedOrder, setSelectedOrder] = useState<OrderRecord | null>(null)
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
+  
   const isRtl = dir === "rtl"
+  const restaurantId = user?.restaurant?.id || ''
 
-  const fetchOrders = async (showLoader = true) => {
-    try {
-      if (showLoader) {
-        setLoading(true)
-      }
-      const [ordersRes, statsRes] = await Promise.all([
-        fetch("/api/orders", { cache: "no-store" }),
-        fetch("/api/orders/stats", { cache: "no-store" }),
-      ])
+  // Fetch orders with pagination
+  const {
+    orders,
+    loading: ordersLoading,
+    hasMore,
+    loadMore,
+    reset,
+    error: ordersError,
+  } = useOrdersPaginated(
+    20,
+    statusFilter === "ALL" ? undefined : statusFilter,
+    locale as 'en' | 'ar',
+    'SAR'
+  )
 
-      if (ordersRes.ok) {
-        const payload = await ordersRes.json()
-        if (payload.success && Array.isArray(payload.orders)) {
-          setOrders(payload.orders)
-        }
-      }
+  // Fetch order statistics
+  const {
+    data: stats,
+    loading: statsLoading,
+    error: statsError,
+  } = useOrderStats(30, locale as 'en' | 'ar')
 
-      if (statsRes.ok) {
-        const payload = await statsRes.json()
-        if (payload.success && payload.stats) {
-          setStats(payload.stats)
-        }
-      }
-    } catch (error) {
-      console.error("Failed to load orders", error)
-      toast.error(t("orders.toasts.loadFailed"))
-    } finally {
-      if (showLoader) {
-        setLoading(false)
-      }
-    }
-  }
-
+  // Show errors
   useEffect(() => {
-    if (user) {
-      void fetchOrders()
+    if (ordersError) {
+      toast.error(t("orders.toasts.loadFailed") || `Failed to load orders: ${ordersError}`)
     }
-  }, [user])
+    if (statsError) {
+      toast.error(t("orders.toasts.statsLoadFailed") || `Failed to load stats: ${statsError}`)
+    }
+  }, [ordersError, statsError, t])
 
+  // Reset orders when filter changes
   useEffect(() => {
-    // Prefer bot websocket order events; fallback to internal realtime if present
-    const unsubscribeBot = subscribeToOrderEvents?.((payload: any) => {
-      try {
-        const order = payload?.order || payload
-        if (!order?.id) return
-        setOrders((prev) => {
-          const next = [...prev]
-          const idx = next.findIndex((o) => o.id === order.id)
-          if (idx >= 0) {
-            next[idx] = { ...next[idx], ...order }
-          } else {
-            next.unshift(order)
-          }
-          return next
-        })
-        void fetchOrders(false)
-        toast.success(t("orders.toasts.statusUpdated"))
-      } catch (error) {
-        console.error("Bot order handler failed", error)
-      }
-    })
+    reset()
+  }, [statusFilter, reset])
 
-    const unsubscribeInternal = subscribeToOrders((event) => {
-      try {
-        const incoming: any = event.order || event.payload || event
-        if (!incoming?.id) {
-          return
-        }
-        setOrders((prev) => {
-          const next = [...prev]
-          const idx = next.findIndex((order) => order.id === incoming.id)
-          if (idx >= 0) {
-            next[idx] = { ...next[idx], ...incoming }
-          } else {
-            next.unshift(incoming)
-          }
-          return next
-        })
-        void fetchOrders(false)
-        toast.success(t("orders.toasts.statusUpdated"))
-      } catch (error) {
-        console.error("Realtime orders handler failed", error)
-      }
-    })
-
-    return () => {
-      unsubscribeInternal()
-      unsubscribeBot && unsubscribeBot()
-    }
-  }, [subscribeToOrders, subscribeToOrderEvents])
-
+  // Filter orders by search query
   const filteredOrders = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
-    const statusTarget = statusFilter.toUpperCase()
+    if (!query) return orders
 
     return orders.filter((order) => {
-      const name = deriveCustomerName(order, t("orders.table.walkIn")).toLowerCase()
-      const phone = deriveCustomerPhone(order, t("orders.table.noPhone")).toLowerCase()
-      const matchesQuery =
-        !query ||
-        order.id.toLowerCase().includes(query) ||
-        name.includes(query) ||
-        phone.includes(query)
-
-      const matchesStatus = statusTarget === "ALL" || normalizeStatus(order.status) === statusTarget
-      return matchesQuery && matchesStatus
+      const customerName = order.customerName.toLowerCase()
+      const orderId = order.id.toLowerCase()
+      const orderRef = order.orderReference.toLowerCase()
+      
+      return (
+        customerName.includes(query) ||
+        orderId.includes(query) ||
+        orderRef.includes(query)
+      )
     })
-  }, [orders, searchQuery, statusFilter, t])
+  }, [orders, searchQuery])
 
-  const handleStatusUpdate = async (orderId: string, nextStatus: string) => {
+  const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus) => {
+    if (!restaurantId) {
+      toast.error(t("orders.toasts.noRestaurant") || "No restaurant selected")
+      return
+    }
+
     try {
       setUpdatingId(orderId)
-      const response = await fetch(`/api/orders/${orderId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to update order")
-      }
-
-      const payload = await response.json()
-      if (payload.success && payload.order) {
-        const updated = payload.order as OrderRecord
-        setOrders((prev) => prev.map((order) => (order.id === updated.id ? updated : order)))
-        toast.success(
-          t("orders.toasts.statusChangeSuccess", { values: { id: updated.id.slice(0, 6) } }),
-        )
+      const result = await updateOrderStatus(orderId, newStatus, restaurantId)
+      
+      if (result.error) {
+        toast.error(t("orders.toasts.updateFailed") || `Failed to update: ${result.error}`)
+      } else {
+        toast.success(t("orders.toasts.statusChangeSuccess") || `Order ${orderId.slice(0, 8)} updated successfully`)
+        reset() // Reload orders
       }
     } catch (error) {
       console.error("Order status update failed", error)
-      toast.error(t("orders.toasts.updateFailed"))
+      toast.error(t("orders.toasts.updateFailed") || "Failed to update order")
     } finally {
       setUpdatingId(null)
     }
   }
+
+  const handleRefresh = () => {
+    reset()
+    toast.success(t("orders.toasts.refreshed") || "Orders refreshed")
+  }
+
+  const statusOptions: { value: OrderStatus; label: string }[] = [
+    { value: "CONFIRMED", label: t("orders.status.confirmed") || "Confirmed" },
+    { value: "PREPARING", label: t("orders.status.preparing") || "Preparing" },
+    { value: "OUT_FOR_DELIVERY", label: t("orders.status.outForDelivery") || "Out for Delivery" },
+    { value: "DELIVERED", label: t("orders.status.delivered") || "Delivered" },
+    { value: "CANCELLED", label: t("orders.status.cancelled") || "Cancelled" },
+  ]
+
+  const loading = ordersLoading && orders.length === 0
 
   if (loading) {
     return (
@@ -261,29 +137,32 @@ function OrdersContent() {
     )
   }
 
-  const statusOptions = Object.entries(STATUS_STYLES)
-
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">{t("orders.header.title")}</h1>
-          <p className="text-muted-foreground">{t("orders.header.subtitle")}</p>
+          <h1 className="text-2xl font-bold text-foreground">{t("orders.header.title") || "Orders"}</h1>
+          <p className="text-muted-foreground">{t("orders.header.subtitle") || "Manage and track your orders"}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleRefresh}>
+            <RefreshCw className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2", ordersLoading && "animate-spin")} />
+            {t("orders.actions.refresh") || "Refresh"}
+          </Button>
           <Button variant="outline" size="sm">
             <Download className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2")} />
-            {t("orders.actions.export")}
+            {t("orders.actions.export") || "Export"}
           </Button>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as OrderStatus | "ALL")}>
             <SelectTrigger className="w-40" dir={dir}>
-              <SelectValue placeholder={t("orders.filters.statusPlaceholder")} />
+              <SelectValue placeholder={t("orders.filters.statusPlaceholder") || "Filter by status"} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">{t("orders.filters.allStatuses")}</SelectItem>
-              {statusOptions.map(([value, meta]) => (
-                <SelectItem key={value} value={value}>
-                  {t(meta.labelKey)}
+              <SelectItem value="ALL">{t("orders.filters.allStatuses") || "All Statuses"}</SelectItem>
+              {statusOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -291,15 +170,16 @@ function OrdersContent() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      {/* Stats Cards */}
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4">
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">
-                  {t("orders.metrics.todaysOrders.title")}
+                  {t("orders.metrics.totalOrders.title") || "Total Orders"}
                 </p>
-                <p className="text-2xl font-bold">{stats?.todays_orders ?? 0}</p>
+                <p className="text-2xl font-bold">{stats?.totalOrders ?? 0}</p>
               </div>
               <Package className="h-8 w-8 text-blue-600" />
             </div>
@@ -310,10 +190,13 @@ function OrdersContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">
-                  {t("orders.metrics.revenue.title")}
+                  {t("orders.metrics.revenue.title") || "Total Revenue"}
                 </p>
                 <p className="text-2xl font-bold">
-                  {formatCurrency((stats?.total_revenue ?? 0) * 100, "SAR")}
+                  {new Intl.NumberFormat(locale, {
+                    style: 'currency',
+                    currency: 'SAR',
+                  }).format((stats?.totalRevenue ?? 0) / 100)}
                 </p>
               </div>
               <DollarSign className="h-8 w-8 text-green-600" />
@@ -325,13 +208,16 @@ function OrdersContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">
-                  {t("orders.metrics.avgValue.title")}
+                  {t("orders.metrics.avgValue.title") || "Avg Order Value"}
                 </p>
                 <p className="text-2xl font-bold">
-                  {formatCurrency((stats?.avg_order_value ?? 0) * 100, "SAR")}
+                  {new Intl.NumberFormat(locale, {
+                    style: 'currency',
+                    currency: 'SAR',
+                  }).format((stats?.averageOrderValue ?? 0) / 100)}
                 </p>
               </div>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-100 text-purple-600 dark:bg-purple-900 dark:text-purple-200">
                 Ø
               </div>
             </div>
@@ -342,21 +228,22 @@ function OrdersContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">
-                  {t("orders.metrics.completionRate.title")}
+                  {t("orders.metrics.period.title") || "Period"}
                 </p>
-                <p className="text-2xl font-bold">{stats?.completion_rate ?? 0}%</p>
+                <p className="text-2xl font-bold">{stats?.period.days ?? 30}d</p>
               </div>
-              <User2 className="h-8 w-8 text-orange-600" />
+              <Clock className="h-8 w-8 text-orange-600" />
             </div>
           </CardContent>
         </Card>
       </div>
 
+      {/* Orders Table */}
       <Card>
         <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
-            <CardTitle>{t("orders.table.title")}</CardTitle>
-            <p className="text-sm text-muted-foreground">{t("orders.table.subtitle")}</p>
+            <CardTitle>{t("orders.table.title") || "Orders"}</CardTitle>
+            <p className="text-sm text-muted-foreground">{t("orders.table.subtitle") || "View and manage all orders"}</p>
           </div>
           <div className="flex w-full max-w-md items-center gap-2 md:w-auto">
             <div className="relative flex-1">
@@ -368,7 +255,7 @@ function OrdersContent() {
               />
               <Input
                 dir={dir}
-                placeholder={t("orders.filters.searchPlaceholder")}
+                placeholder={t("orders.filters.searchPlaceholder") || "Search orders..."}
                 className={cn("w-full", isRtl ? "pr-10 pl-3 text-right" : "pl-9")}
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
@@ -377,194 +264,138 @@ function OrdersContent() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t("orders.table.columns.order")}</TableHead>
-                <TableHead>{t("orders.table.columns.customer")}</TableHead>
-                <TableHead>{t("orders.table.columns.status")}</TableHead>
-                <TableHead>{t("orders.table.columns.payment")}</TableHead>
-                <TableHead>{t("orders.table.columns.total")}</TableHead>
-                <TableHead>{t("orders.table.columns.placed")}</TableHead>
+                  <TableHead>{t("orders.table.columns.order") || "Order ID"}</TableHead>
+                  <TableHead>{t("orders.table.columns.customer") || "Customer"}</TableHead>
+                  <TableHead>{t("orders.table.columns.items") || "Items"}</TableHead>
+                  <TableHead>{t("orders.table.columns.total") || "Total"}</TableHead>
+                  <TableHead>{t("orders.table.columns.status") || "Status"}</TableHead>
+                  <TableHead>{t("orders.table.columns.time") || "Time"}</TableHead>
+                  <TableHead>{t("orders.table.columns.alerts") || "Alerts"}</TableHead>
                 <TableHead className={cn(isRtl ? "text-left" : "text-right")}>
-                  {t("orders.table.columns.actions")}
+                    {t("orders.table.columns.actions") || "Actions"}
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredOrders.map((order) => {
-                const statusKey = normalizeStatus(order.status)
-                const statusMeta = STATUS_STYLES[statusKey] ?? STATUS_STYLES.DRAFT
-                const paymentStatusKey = normalizeStatus(order.meta?.payment_status)
-                const paymentMeta = PAYMENT_STATUS_STYLES[paymentStatusKey] ?? PAYMENT_STATUS_STYLES.PENDING
-                const customerName = deriveCustomerName(order, t("orders.table.walkIn"))
-                const customerPhone = deriveCustomerPhone(order, t("orders.table.noPhone"))
-
-                return (
+                {filteredOrders.map((order) => (
                   <TableRow key={order.id}>
-                    <TableCell className="font-mono text-sm">{order.id.slice(0, 10)}</TableCell>
-                    <TableCell>
+                    <TableCell className="font-mono text-sm">
                       <div className="flex flex-col">
-                        <span className="font-medium">{customerName}</span>
-                        <span className="text-xs text-muted-foreground">{customerPhone}</span>
+                        <span className="font-medium">{order.orderReference}</span>
+                        <span className="text-xs text-muted-foreground">{order.id.slice(0, 8)}</span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge className={statusMeta.badge}>{t(statusMeta.labelKey)}</Badge>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{order.customerName}</span>
+                        <span className="text-xs text-muted-foreground">{order.createdAtRelative}</span>
+                      </div>
                     </TableCell>
                     <TableCell>
-                      <Badge className={paymentMeta.badge}>{t(paymentMeta.labelKey)}</Badge>
+                      <span className="font-medium">{order.itemCount} {t("orders.table.items") || "items"}</span>
                     </TableCell>
-                    <TableCell>{formatCurrency(order.totalCents, order.currency)}</TableCell>
-                    <TableCell>{new Date(order.createdAt).toLocaleString(locale)}</TableCell>
+                    <TableCell className="font-medium">{order.totalFormatted}</TableCell>
+                    <TableCell>
+                      <Badge className={STATUS_STYLES[order.status].badge}>
+                        {order.statusDisplay}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col text-sm">
+                        <span>{new Date(order.createdAt).toLocaleDateString(locale)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(order.createdAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        {order.alerts.isLate && (
+                          <AlertTriangle className="h-4 w-4 text-amber-600" title={t("orders.alerts.late") || "Late"} />
+                        )}
+                        {order.alerts.awaitingPayment && (
+                          <Clock className="h-4 w-4 text-blue-600" title={t("orders.alerts.payment") || "Awaiting payment"} />
+                        )}
+                        {order.alerts.requiresReview && (
+                          <Eye className="h-4 w-4 text-purple-600" title={t("orders.alerts.review") || "Requires review"} />
+                        )}
+                        {!order.alerts.isLate && !order.alerts.awaitingPayment && !order.alerts.requiresReview && (
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className={cn(isRtl ? "text-left" : "text-right")}>
                       <div className={cn("flex gap-2", isRtl ? "justify-start" : "justify-end")}>
                         <Select
-                          onValueChange={(value) => handleStatusUpdate(order.id, value)}
+                          onValueChange={(value) => handleStatusUpdate(order.id, value as OrderStatus)}
                           disabled={updatingId === order.id}
+                          value={order.status}
                         >
                           <SelectTrigger className="w-36" dir={dir}>
-                            <SelectValue placeholder={t("orders.table.updateStatusPlaceholder")} />
+                            <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {statusOptions.map(([value, meta]) => (
-                              <SelectItem key={value} value={value}>
-                                {t(meta.labelKey)}
+                            {statusOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setSelectedOrder(order)}
-                          aria-label={t("orders.actions.viewDetails")}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
-                )
-              })}
+                ))}
 
-              {filteredOrders.length === 0 ? (
+                {filteredOrders.length === 0 && !ordersLoading && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                      {searchQuery
+                        ? t("orders.table.noResults") || "No orders found matching your search"
+                        : t("orders.table.empty") || "No orders yet"}
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {ordersLoading && filteredOrders.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                    {t("orders.table.empty")}
+                    <TableCell colSpan={8} className="py-8 text-center">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                   </TableCell>
                 </TableRow>
-              ) : null}
+                )}
             </TableBody>
           </Table>
+          </div>
+
+          {/* Load More Button */}
+          {hasMore && filteredOrders.length > 0 && (
+            <div className="p-4 border-t flex justify-center">
+              <Button
+                variant="outline"
+                onClick={loadMore}
+                disabled={ordersLoading}
+              >
+                {ordersLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {t("orders.actions.loading") || "Loading..."}
+                  </>
+                ) : (
+                  t("orders.actions.loadMore") || "Load More"
+                )}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
-        <DialogContent className="max-w-xl">
-          {selectedOrder ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>
-                  {t("orders.dialog.title", { values: { id: selectedOrder.id.slice(0, 10) } })}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-6">
-                <div className="grid gap-2 text-sm">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <User2 className="h-4 w-4" />
-                    <span>{deriveCustomerName(selectedOrder, t("orders.table.walkIn"))}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Phone className="h-4 w-4" />
-                    <span>{deriveCustomerPhone(selectedOrder, t("orders.table.noPhone"))}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    <span>{new Date(selectedOrder.createdAt).toLocaleString(locale)}</span>
-                  </div>
-                  {selectedOrder.meta?.delivery_address ? (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <MapPin className="h-4 w-4" />
-                      <span>{selectedOrder.meta.delivery_address}</span>
-                    </div>
-                  ) : null}
-                  {selectedOrder.meta?.payment_link ? (
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <DollarSign className="h-4 w-4" />
-                      <a
-                        href={selectedOrder.meta.payment_link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
-                      >
-                        {t("orders.dialog.viewPaymentLink")}
-                      </a>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="space-y-3">
-                  <h3 className="text-sm font-medium">{t("orders.dialog.itemsTitle")}</h3>
-                  <div className="space-y-2 rounded-lg border">
-                    {selectedOrder.items.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between px-4 py-2 text-sm">
-                        <div>
-                          <p className="font-medium">{item.name}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {t("orders.dialog.itemQuantity", { values: { qty: item.qty } })}
-                          </p>
-                        </div>
-                        <span>{formatCurrency(item.totalCents, selectedOrder.currency)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{t("orders.dialog.total")}</span>
-                  <span>{formatCurrency(selectedOrder.totalCents, selectedOrder.currency)}</span>
-                </div>
-
-                {selectedOrder.meta?.payment_status ? (
-                  <div className="border-t pt-4">
-                    <h3 className="mb-2 text-sm font-medium">{t("orders.dialog.payment.title")}</h3>
-                    <div className="space-y-2 text-sm">
-                      {(() => {
-                        const detailStatusKey = normalizeStatus(selectedOrder.meta?.payment_status)
-                        const detailStatusMeta =
-                          PAYMENT_STATUS_STYLES[detailStatusKey] ?? PAYMENT_STATUS_STYLES.PENDING
-                        return (
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">{t("orders.dialog.payment.status")}</span>
-                            <Badge className={detailStatusMeta.badge}>{t(detailStatusMeta.labelKey)}</Badge>
-                          </div>
-                        )
-                      })()}
-                      {selectedOrder.meta.payment_method ? (
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">{t("orders.dialog.payment.method")}</span>
-                          <span>{selectedOrder.meta.payment_method}</span>
-                        </div>
-                      ) : null}
-                      {selectedOrder.meta.payment_transaction_id ? (
-                        <div className="flex items-center justify-between">
-                          <span className="text-muted-foreground">{t("orders.dialog.payment.transaction")}</span>
-                          <span className="font-mono text-xs">
-                            {selectedOrder.meta.payment_transaction_id}
-                          </span>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      {updatingId ? (
+      {/* Updating indicator */}
+      {updatingId && (
         <div
           className={cn(
             "fixed bottom-4 flex items-center gap-2 rounded-md border bg-background px-4 py-2 shadow-lg",
@@ -572,9 +403,9 @@ function OrdersContent() {
           )}
         >
           <Loader2 className="h-4 w-4 animate-spin" />
-          <span className="text-sm">{t("orders.loading.updating")}</span>
+          <span className="text-sm">{t("orders.loading.updating") || "Updating order..."}</span>
         </div>
-      ) : null}
+      )}
     </div>
   )
 }
@@ -583,11 +414,7 @@ export default function OrdersPage() {
   return (
     <AuthGuard>
       <DashboardLayout>
-        <BotWebSocketProvider>
-          <RealtimeProvider>
             <OrdersContent />
-          </RealtimeProvider>
-        </BotWebSocketProvider>
       </DashboardLayout>
     </AuthGuard>
   )

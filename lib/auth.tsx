@@ -8,6 +8,7 @@ interface User {
   name?: string
   email?: string
   is_verified: boolean
+  tenantId?: string | null
   restaurant?: {
     id: string
     name: string

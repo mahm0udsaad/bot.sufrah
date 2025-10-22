@@ -4,11 +4,11 @@ import type React from "react"
 
 import { useMemo, useState } from "react"
 import { usePathname } from "next/navigation"
-import { Bell, Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X, Bot, ScrollText, Shield, Star } from "lucide-react"
+import { Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X, Bot, ScrollText, Shield, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { SignOutButton } from "@/components/sign-out-button"
+import { NotificationsBell } from "@/components/notifications-bell"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
 import { LocaleSwitcher } from "@/components/locale-switcher"
@@ -250,12 +250,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 />
               </div>
               <LocaleSwitcher />
-              <Button variant="ghost" size="sm" className="relative">
-                <Bell className="h-5 w-5" />
-                <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs">
-                  3
-                </Badge>
-              </Button>
+              <NotificationsBell />
             </div>
           </div>
         </div>

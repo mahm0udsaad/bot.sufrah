@@ -47,6 +47,8 @@ const ar = {
     overview: {
       title: "لوحة التحكم",
       subtitle: "تابع أداء بوت واتساب لديك وتابع استخدام حصة الرسائل",
+      error: "فشل تحميل لوحة التحكم",
+      refresh: "تحديث",
       stats: {
         activeChats: {
           title: "المحادثات النشطة",
@@ -64,6 +66,11 @@ const ar = {
           title: "القوالب النشطة",
           description: "قوالب معتمدة",
         },
+        slaBreaches: {
+          title: "خروقات اتفاقية مستوى الخدمة",
+          warning: "يتطلب الانتباه",
+          ok: "كل شيء على ما يرام",
+        },
       },
       usage: {
         title: "نظرة على الاستخدام",
@@ -79,6 +86,9 @@ const ar = {
         openConversations: "{count} مفتوحة",
         messagesToday: "رسائل اليوم",
         messagesCount: "{count} مرسلة",
+        pendingOrders: "الطلبات المعلقة",
+        sla: "اتفاقية مستوى الخدمة",
+        breaches: "خروقات",
         alert: {
           title: "تنبيه!",
           body: "استخدمت {percentage}% من حصة الرسائل الخاصة بك",
@@ -87,6 +97,7 @@ const ar = {
       activity: {
         title: "النشاط اليومي (٧ أيام)",
         subtitle: "الرسائل والطلبات مع مرور الوقت",
+        description: "رسم بياني يوضح عدد الرسائل والطلبات خلال آخر ٧ أيام.",
         legend: {
           messages: "الرسائل",
           orders: "الطلبات",
@@ -104,6 +115,7 @@ const ar = {
       templates: {
         title: "استخدام القوالب",
         subtitle: "أكثر القوالب استخداماً هذا الأسبوع",
+        description: "رسم بياني يوضح استخدام قوالب الرسائل الأكثر شيوعًا.",
         fallback: {
           welcome: "رسالة الترحيب",
           confirmation: "تأكيد الطلب",
@@ -119,6 +131,21 @@ const ar = {
         preparing: "قيد التحضير",
         ready: "جاهز",
         delivered: "تم التسليم",
+        last24h: "آخر 24 ساعة",
+        conversations: "المحادثات النشطة",
+      },
+      ratings: {
+        title: "تقييمات العملاء",
+        description: "نظرة عامة على ملاحظات وتقييمات العملاء.",
+        average: "متوسط التقييم",
+        total: "إجمالي التقييمات",
+        change: "التغيير",
+        highlights: {
+          title: "أبرز التقييمات",
+          item1: "ملاحظات إيجابية على جودة الطعام.",
+          item2: "العملاء يقدرون سرعة التوصيل.",
+          item3: "اقتراحات لتحسين تنوع القائمة.",
+        },
       },
     },
   },

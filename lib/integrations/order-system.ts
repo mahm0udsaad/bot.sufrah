@@ -1,3 +1,5 @@
+import { formatPhoneForSufrah } from '../phone-utils'
+
 export interface ExternalOrderSystem {
   createOrder(orderData: any): Promise<{ success: boolean; orderId?: string; error?: string }>
   updateOrderStatus(orderId: string, status: string): Promise<{ success: boolean; error?: string }>
@@ -118,10 +120,13 @@ export const orderSystem = new OrderSystemStub()
 // Integration helper functions
 export async function syncOrderWithExternalSystem(order: any) {
   try {
+    // Format phone number for Sufrah API (remove + sign)
+    const formattedPhone = order.customer_phone ? formatPhoneForSufrah(order.customer_phone) : '';
+    
     const result = await orderSystem.createOrder({
       customer: {
         name: order.customer_name,
-        phone: order.customer_phone,
+        phone: formattedPhone, // Phone without + sign for Sufrah API
         address: order.delivery_address,
       },
       items: order.items,

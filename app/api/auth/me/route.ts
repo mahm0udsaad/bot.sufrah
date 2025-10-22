@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
 import { db } from "@/lib/db"
+import prisma from "@/lib/prisma"
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,6 +26,9 @@ export async function GET(request: NextRequest) {
         console.log("[v0] New user created:", newUser.id)
 
         const restaurant = await db.getPrimaryRestaurantByUserId(newUser.id)
+        const restaurantBot = restaurant
+          ? await prisma.restaurantBot.findFirst({ where: { restaurantId: restaurant.id } })
+          : null
 
         return NextResponse.json({
           id: newUser.id,
@@ -33,6 +37,7 @@ export async function GET(request: NextRequest) {
           email: newUser.email,
           is_verified: newUser.is_verified,
           restaurant: restaurant,
+          tenantId: restaurantBot?.id ?? null,
         })
       } catch (createError) {
         console.error("[v0] Failed to create user:", createError)
@@ -41,6 +46,9 @@ export async function GET(request: NextRequest) {
     }
 
     const restaurant = await db.getPrimaryRestaurantByUserId(user.id)
+    const restaurantBot = restaurant
+      ? await prisma.restaurantBot.findFirst({ where: { restaurantId: restaurant.id } })
+      : null
 
     return NextResponse.json({
       id: user.id,
@@ -49,6 +57,7 @@ export async function GET(request: NextRequest) {
       email: user.email,
       is_verified: user.is_verified,
       restaurant: restaurant,
+      tenantId: restaurantBot?.id ?? null,
     })
   } catch (error) {
     console.error("Auth check error:", error)

@@ -47,6 +47,8 @@ const en = {
     overview: {
       title: "Dashboard",
       subtitle: "Monitor your WhatsApp bot performance and manage your messaging quota",
+      error: "Failed to load dashboard",
+      refresh: "Refresh",
       stats: {
         activeChats: {
           title: "Active Chats",
@@ -64,6 +66,11 @@ const en = {
           title: "Active Templates",
           description: "Approved templates",
         },
+        slaBreaches: {
+          title: "SLA Breaches",
+          warning: "Requires attention",
+          ok: "All good",
+        },
       },
       usage: {
         title: "Usage Overview",
@@ -79,6 +86,9 @@ const en = {
         openConversations: "{count} open",
         messagesToday: "Messages today",
         messagesCount: "{count} sent",
+        pendingOrders: "Pending Orders",
+        sla: "SLA",
+        breaches: "Breaches",
         alert: {
           title: "Heads up!",
           body: "You've used {percentage}% of your message quota",
@@ -87,6 +97,7 @@ const en = {
       activity: {
         title: "Daily Activity (7 days)",
         subtitle: "Messages and orders over time",
+        description: "A chart showing the number of messages and orders over the last 7 days.",
         legend: {
           messages: "Messages",
           orders: "Orders",
@@ -104,6 +115,7 @@ const en = {
       templates: {
         title: "Template Usage",
         subtitle: "Most used message templates this week",
+        description: "A chart showing the usage of the most popular message templates.",
         fallback: {
           welcome: "Welcome Message",
           confirmation: "Order Confirmation",
@@ -119,6 +131,21 @@ const en = {
         preparing: "Preparing",
         ready: "Ready",
         delivered: "Delivered",
+        last24h: "Last 24h",
+        conversations: "Active Chats",
+      },
+      ratings: {
+        title: "Customer Ratings",
+        description: "An overview of customer feedback and ratings.",
+        average: "Average Rating",
+        total: "Total Ratings",
+        change: "Change",
+        highlights: {
+          title: "Rating Highlights",
+          item1: "Positive feedback on food quality.",
+          item2: "Customers appreciate fast delivery.",
+          item3: "Suggestions for improving menu variety.",
+        },
       },
     },
   },

@@ -1,10 +1,12 @@
 /**
  * React Hooks for Dashboard API
  * Provides easy-to-use hooks for all dashboard API endpoints
+ * Now uses Server Actions to avoid CORS issues
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import * as api from '@/lib/dashboard-api';
+import * as actions from '@/lib/dashboard-actions';
+import type * as api from '@/lib/dashboard-api';
 import { useAuth } from '@/lib/auth';
 
 type Locale = api.Locale;
@@ -29,7 +31,7 @@ export function useDashboardOverview(locale: Locale = 'en', currency: api.Curren
 
     const fetchData = async () => {
       setLoading(true);
-      const result = await api.fetchDashboardOverview(tenantId, locale, currency);
+      const result = await actions.getDashboardOverview(tenantId, locale, currency);
       
       if (result.error) {
         setError(result.error);
@@ -47,7 +49,7 @@ export function useDashboardOverview(locale: Locale = 'en', currency: api.Curren
     if (!tenantId) return;
     
     setLoading(true);
-    const result = await api.fetchDashboardOverview(tenantId, locale, currency);
+    const result = await actions.getDashboardOverview(tenantId, locale, currency);
     
     if (result.error) {
       setError(result.error);
@@ -83,7 +85,7 @@ export function useConversations(
 
     const fetchData = async () => {
       setLoading(true);
-      const result = await api.fetchConversations(tenantId, params);
+      const result = await actions.getConversations(tenantId, params);
       
       if (result.error) {
         setError(result.error);
@@ -100,7 +102,7 @@ export function useConversations(
   const refetch = useCallback(async () => {
     if (!tenantId) return;
     
-    const result = await api.fetchConversations(tenantId, params);
+    const result = await actions.getConversations(tenantId, params);
     if (!result.error) {
       setData(result.data);
     }
@@ -126,7 +128,7 @@ export function useConversationsPaginated(
     if (loading || !hasMore || !tenantId) return;
 
     setLoading(true);
-    const result = await api.fetchConversations(tenantId, {
+    const result = await actions.getConversations(tenantId, {
       limit: pageSize,
       offset,
       locale,
@@ -175,7 +177,7 @@ export function useConversationTranscript(conversationId: string, locale: Locale
 
     const fetchData = async () => {
       setLoading(true);
-      const result = await api.fetchConversationTranscript(conversationId, tenantId, locale);
+      const result = await actions.getConversationTranscript(conversationId, tenantId, locale);
       
       if (result.error) {
         setError(result.error);
@@ -220,7 +222,7 @@ export function useOrders(
 
     const fetchData = async () => {
       setLoading(true);
-      const result = await api.fetchOrders(tenantId, params);
+      const result = await actions.getOrders(tenantId, params);
       
       if (result.error) {
         setError(result.error);
@@ -237,7 +239,7 @@ export function useOrders(
   const refetch = useCallback(async () => {
     if (!tenantId) return;
     
-    const result = await api.fetchOrders(tenantId, params);
+    const result = await actions.getOrders(tenantId, params);
     if (!result.error) {
       setData(result.data);
     }
@@ -265,7 +267,7 @@ export function useOrdersPaginated(
     if (loading || !hasMore || !tenantId) return;
 
     setLoading(true);
-    const result = await api.fetchOrders(tenantId, {
+    const result = await actions.getOrders(tenantId, {
       limit: pageSize,
       offset,
       status,
@@ -316,7 +318,7 @@ export function useOrderStats(days: number = 30, locale: Locale = 'en') {
 
     const fetchData = async () => {
       setLoading(true);
-      const result = await api.fetchOrderStats(tenantId, { days, locale });
+      const result = await actions.getOrderStats(tenantId, { days, locale });
       
       if (result.error) {
         setError(result.error);
@@ -353,7 +355,7 @@ export function useRatings(days: number = 30, locale: Locale = 'en') {
 
     const fetchData = async () => {
       setLoading(true);
-      const result = await api.fetchRatings(tenantId, { days, locale });
+      const result = await actions.getRatings(tenantId, { days, locale });
       
       if (result.error) {
         setError(result.error);
@@ -405,7 +407,7 @@ export function useReviews(
         q: undefined as string | undefined,
         locale: params.locale,
       };
-      const result = await api.fetchReviews(tenantId, mapped);
+      const result = await actions.getReviews(tenantId, mapped);
       
       if (result.error) {
         setError(result.error);
@@ -438,7 +440,7 @@ export function useRatingTimeline(days: number = 30, locale: Locale = 'en') {
 
     const fetchData = async () => {
       setLoading(true);
-      const result = await api.fetchRatingTimeline(tenantId, days, locale);
+      const result = await actions.getRatingTimeline(tenantId, days, locale);
       
       if (result.error) {
         setError(result.error);
@@ -469,12 +471,12 @@ export function useNotifications(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = user?.tenantId || user?.restaurantId || user?.restaurant?.id || '';
+  const tenantId = user?.tenantId || user?.restaurant?.id || '';
 
   const fetchData = useCallback(async () => {
     if (!tenantId) return;
 
-    const result = await api.fetchNotifications(tenantId, includeRead, locale);
+    const result = await actions.getNotifications(tenantId, includeRead, locale);
     
     if (result.error) {
       setError(result.error);
@@ -503,7 +505,7 @@ export function useNotifications(
     async (notificationId: string) => {
       if (!tenantId) return;
 
-      await api.markNotificationRead(notificationId, tenantId);
+      await actions.markNotificationRead(notificationId, tenantId);
       await fetchData();
     },
     [tenantId, fetchData]
@@ -530,7 +532,7 @@ export function useBotStatus(includeHistory: boolean = false, locale: Locale = '
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = user?.tenantId || user?.restaurantId || user?.restaurant?.id || '';
+  const tenantId = user?.tenantId || user?.restaurant?.id || '';
 
   useEffect(() => {
     if (!tenantId) {
@@ -540,7 +542,7 @@ export function useBotStatus(includeHistory: boolean = false, locale: Locale = '
 
     const fetchData = async () => {
       setLoading(true);
-      const result = await api.fetchBotStatus(tenantId, includeHistory, locale);
+      const result = await actions.getBotStatus(tenantId, includeHistory, locale);
       
       if (result.error) {
         setError(result.error);
@@ -555,10 +557,10 @@ export function useBotStatus(includeHistory: boolean = false, locale: Locale = '
   }, [tenantId, includeHistory, locale]);
 
   const updateSettings = useCallback(
-    async (settings: Parameters<typeof api.updateBotSettings>[0]) => {
+    async (settings: Parameters<typeof actions.updateBotSettings>[0]) => {
       if (!tenantId) return;
 
-      const result = await api.updateBotSettings(settings, tenantId);
+      const result = await actions.updateBotSettings(settings, tenantId);
       return result;
     },
     [tenantId]
@@ -583,13 +585,13 @@ export function useTemplates(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = user?.tenantId || user?.restaurantId || user?.restaurant?.id || '';
+  const tenantId = user?.tenantId || user?.restaurant?.id || '';
 
   const fetchData = useCallback(async () => {
     if (!tenantId) return;
 
     setLoading(true);
-    const result = await api.fetchTemplates(tenantId, params);
+    const result = await actions.getTemplates(tenantId, params);
     
     if (result.error) {
       setError(result.error);
@@ -610,10 +612,10 @@ export function useTemplates(
   }, [tenantId, fetchData]);
 
   const createTemplate = useCallback(
-    async (template: Parameters<typeof api.createTemplate>[0]) => {
+    async (template: Parameters<typeof actions.createTemplate>[0]) => {
       if (!tenantId) return;
 
-      const result = await api.createTemplate(template, tenantId);
+      const result = await actions.createTemplate(template, tenantId);
       if (!result.error) {
         await fetchData();
       }
@@ -623,10 +625,10 @@ export function useTemplates(
   );
 
   const updateTemplate = useCallback(
-    async (templateId: string, updates: Parameters<typeof api.updateTemplate>[1]) => {
+    async (templateId: string, updates: Parameters<typeof actions.updateTemplate>[1]) => {
       if (!tenantId) return;
 
-      const result = await api.updateTemplate(templateId, updates, tenantId);
+      const result = await actions.updateTemplate(templateId, updates, tenantId);
       if (!result.error) {
         await fetchData();
       }
@@ -639,7 +641,7 @@ export function useTemplates(
     async (templateId: string) => {
       if (!tenantId) return;
 
-      const result = await api.deleteTemplate(templateId, tenantId);
+      const result = await actions.deleteTemplate(templateId, tenantId);
       if (!result.error) {
         await fetchData();
       }
@@ -655,18 +657,22 @@ export function useTemplates(
 // CATALOG HOOKS
 // ============================================================================
 
-export function useCatalog(locale: Locale = 'en') {
+export function useCatalog(locale: Locale = 'en', selectedCategoryId?: string) {
   const { user } = useAuth();
   const [categories, setCategories] = useState<api.Category[]>([]);
   const [branches, setBranches] = useState<api.Branch[]>([]);
+  const [items, setItems] = useState<api.MenuItem[]>([]);
   const [syncStatus, setSyncStatus] = useState<api.SyncStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [itemsLoading, setItemsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = user?.tenantId || user?.restaurantId || user?.restaurant?.id || '';
+  // Catalog endpoints on the bot server expect the Restaurant ID via X-Restaurant-Id
+  const restaurantId = user?.tenantId || user?.restaurant?.id || '';
 
+  // Fetch initial catalog data (categories, branches, sync status)
   useEffect(() => {
-    if (!tenantId) {
+    if (!restaurantId) {
       setLoading(false);
       return;
     }
@@ -675,9 +681,9 @@ export function useCatalog(locale: Locale = 'en') {
       setLoading(true);
 
       const [categoriesResult, branchesResult, syncResult] = await Promise.all([
-        api.fetchCategories(tenantId, locale),
-        api.fetchBranches(tenantId, locale),
-        api.fetchSyncStatus(tenantId, locale),
+        actions.getCategories(restaurantId, locale),
+        actions.getBranches(restaurantId, locale),
+        actions.getSyncStatus(restaurantId, locale),
       ]);
 
       if (categoriesResult.error || branchesResult.error || syncResult.error) {
@@ -695,9 +701,33 @@ export function useCatalog(locale: Locale = 'en') {
     };
 
     fetchData();
-  }, [tenantId, locale]);
+  }, [restaurantId, locale]);
 
-  return { categories, branches, syncStatus, loading, error };
+  // Fetch menu items when category changes
+  useEffect(() => {
+    if (!restaurantId) {
+      return;
+    }
+
+    const fetchItems = async () => {
+      setItemsLoading(true);
+
+      const itemsResult = await actions.getMenuItems(restaurantId, locale, selectedCategoryId);
+
+      if (itemsResult.error) {
+        console.error('Error fetching menu items:', itemsResult.error);
+        setItems([]);
+      } else {
+        setItems(itemsResult.data.items || []);
+      }
+
+      setItemsLoading(false);
+    };
+
+    fetchItems();
+  }, [restaurantId, locale, selectedCategoryId]);
+
+  return { categories, branches, items, syncStatus, loading, itemsLoading, error };
 }
 
 // ============================================================================
@@ -710,13 +740,13 @@ export function useProfile(locale: Locale = 'en') {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = user?.tenantId || user?.restaurantId || user?.restaurant?.id || '';
+  const tenantId = user?.tenantId || user?.restaurant?.id || '';
 
   const fetchData = useCallback(async () => {
     if (!tenantId) return;
 
     setLoading(true);
-    const result = await api.fetchProfile(tenantId, locale);
+    const result = await actions.getProfile(tenantId, locale);
     
     if (result.error) {
       setError(result.error);
@@ -737,10 +767,10 @@ export function useProfile(locale: Locale = 'en') {
   }, [tenantId, fetchData]);
 
   const updateProfile = useCallback(
-    async (updates: Parameters<typeof api.updateProfile>[0]) => {
+    async (updates: Parameters<typeof actions.updateProfile>[0]) => {
       if (!tenantId) return;
 
-      const result = await api.updateProfile(updates, tenantId);
+      const result = await actions.updateProfile(updates, tenantId);
       if (!result.error) {
         await fetchData();
       }
@@ -760,7 +790,7 @@ export function useAuditLogs(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = user?.tenantId || user?.restaurantId || '';
+  const tenantId = user?.tenantId || user?.restaurant?.id || '';
 
   useEffect(() => {
     if (!tenantId) {
@@ -770,7 +800,7 @@ export function useAuditLogs(
 
     const fetchData = async () => {
       setLoading(true);
-      const result = await api.fetchAuditLogs(tenantId, params);
+      const result = await actions.getAuditLogs(tenantId, params);
       
       if (result.error) {
         setError(result.error);
@@ -806,13 +836,13 @@ export function useLogs(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = user?.tenantId || user?.restaurantId || '';
+  const tenantId = user?.tenantId || user?.restaurant?.id || '';
 
   const fetchData = useCallback(async () => {
     if (!tenantId) return;
 
     setLoading(true);
-    const result = await api.fetchLogs(tenantId, params);
+    const result = await actions.getLogs(tenantId, params);
     
     if (result.error) {
       setError(result.error);
@@ -845,7 +875,7 @@ export function useOnboarding(locale: Locale = 'en') {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const tenantId = user?.tenantId || user?.restaurantId || '';
+  const tenantId = user?.tenantId || user?.restaurant?.id || '';
 
   useEffect(() => {
     if (!tenantId) {
@@ -855,7 +885,7 @@ export function useOnboarding(locale: Locale = 'en') {
 
     const fetchData = async () => {
       setLoading(true);
-      const result = await api.fetchOnboardingProgress(tenantId, locale);
+      const result = await actions.getOnboardingProgress(tenantId, locale);
       
       if (result.error) {
         setError(result.error);
@@ -882,7 +912,7 @@ export function useHealthCheck(pollInterval: number = 60000) {
 
   useEffect(() => {
     const fetchData = async () => {
-      const result = await api.checkHealth();
+      const result = await actions.checkHealth();
       setData(result);
       setLoading(false);
     };

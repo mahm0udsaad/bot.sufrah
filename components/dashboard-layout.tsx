@@ -8,7 +8,7 @@ import { Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileT
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { SignOutButton } from "@/components/sign-out-button"
-import { NotificationsBell } from "@/components/notifications-bell"
+import { NotificationsSheet } from "@/components/notifications-sheet"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
 import { LocaleSwitcher } from "@/components/locale-switcher"
@@ -250,7 +250,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 />
               </div>
               <LocaleSwitcher />
-              <NotificationsBell />
+              <NotificationsSheet />
             </div>
           </div>
         </div>

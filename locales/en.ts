@@ -43,6 +43,15 @@ const en = {
     adminSection: "Admin",
     searchPlaceholder: "Search conversations...",
   },
+  notifications: {
+    title: "Notifications",
+    markAllRead: "Mark all read",
+    empty: "No notifications yet",
+    error: {
+      fetch: "Failed to load notifications",
+      markRead: "Failed to mark as read",
+    },
+  },
   dashboard: {
     overview: {
       title: "Dashboard",
@@ -269,11 +278,34 @@ const en = {
   catalog: {
     header: {
       title: "Catalog",
-      subtitle: "Manage products, categories, and branch availability",
+      subtitle: "Browse your menu and branches",
+    },
+    error: "Failed to load catalog",
+    sync: {
+      success: "Synced successfully",
+      failed: "Sync failed",
+      inProgress: "Syncing...",
+      lastSync: "Last sync:",
+      items: "items",
+      errors: "errors",
+    },
+    stats: {
+      categories: "Categories",
+      branches: "Branches",
+      active: "Active Branches",
     },
     categories: {
       title: "Categories",
       empty: "No categories found",
+      all: "All Items",
+    },
+    items: {
+      title: "Menu Items",
+      total: "items",
+      empty: "No items found",
+      unavailable: "Unavailable",
+      cal: "cal",
+      min: "min",
     },
     products: {
       title: "Products",
@@ -296,6 +328,9 @@ const en = {
       noAddress: "No address provided",
       emptyTitle: "No branches available",
       emptySubtitle: "Add your first branch location",
+      total: "total",
+      active: "Active",
+      inactive: "Inactive",
     },
   },
   ratings: {

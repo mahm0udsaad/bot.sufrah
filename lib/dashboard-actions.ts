@@ -1,26 +1,64 @@
+'use server';
 
 /**
- * Dashboard API Client
- * Comprehensive client for interacting with the bot server backend
- * 
- * @deprecated Use dashboard-actions.ts for server-side calls to avoid CORS issues
- * This file is kept for type definitions and should only be used in special cases
- * where client-side API calls are absolutely necessary.
- * 
- * For most use cases, import from './dashboard-actions' instead.
+ * Dashboard Server Actions
+ * Server-side actions to fetch data from the bot backend API
+ * Avoids CORS issues and keeps API keys secure
  */
+
+import {
+  type Locale,
+  type Currency,
+  type OrderStatus,
+  type TemplateStatus,
+  type TemplateCategory,
+  type LogSeverity,
+  type DashboardOverview,
+  type ConversationsSummary,
+  type ConversationTranscript,
+  type OrdersLive,
+  type OrderStats,
+  type RatingsAnalytics,
+  type ReviewsList,
+  type RatingTimeline,
+  type NotificationsList,
+  type BotInfo,
+  type TemplatesList,
+  type Category,
+  type MenuItem,
+  type Branch,
+  type SyncStatus,
+  type RestaurantProfile,
+  type AuditLogsList,
+  type LogsList,
+  type OnboardingProgress,
+  type HealthCheck,
+} from './dashboard-api';
 
 import { formatPhoneForSufrah } from './phone-utils';
 
 // Environment configuration - aligned with documentation
-// Note: This file is deprecated for API calls - use dashboard-actions.ts instead
-// Kept only for type definitions and backwards compatibility
-const API_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+// CRITICAL: Must be absolute URL to external Bun backend, NOT relative
+const API_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL || process.env.NEXT_PUBLIC_API_URL || '';
 const DASHBOARD_PAT = process.env.NEXT_PUBLIC_DASHBOARD_PAT || '';
 const DASHBOARD_API_KEY = process.env.NEXT_PUBLIC_DASHBOARD_API_KEY || process.env.NEXT_PUBLIC_BOT_API_KEY || '';
 
-export type Locale = 'en' | 'ar';
-export type Currency = 'SAR' | 'USD' | 'EUR';
+// Validation: Ensure API_URL is set and is an absolute URL
+if (!API_URL) {
+  console.error('❌ CRITICAL: NEXT_PUBLIC_DASHBOARD_API_URL is not set!');
+  console.error('Set it in .env.local: NEXT_PUBLIC_DASHBOARD_API_URL=http://localhost:3000');
+}
+if (API_URL && !API_URL.startsWith('http://') && !API_URL.startsWith('https://')) {
+  console.error('❌ CRITICAL: NEXT_PUBLIC_DASHBOARD_API_URL must be an absolute URL (http:// or https://)');
+  console.error(`Current value: "${API_URL}"`);
+}
+
+// Debug logging in development
+if (process.env.NODE_ENV === 'development') {
+  console.log('🔧 Dashboard API Configuration:');
+  console.log(`   API_URL: ${API_URL || 'NOT SET'}`);
+  console.log(`   PAT: ${DASHBOARD_PAT ? '***' + DASHBOARD_PAT.slice(-4) : 'NOT SET'}`);
+}
 
 interface ApiConfig {
   restaurantId?: string;
@@ -63,6 +101,8 @@ function getHeaders(config: ApiConfig = {}): HeadersInit {
  * Base fetch wrapper with error handling
  * All responses follow the pattern: { data: T, meta?: {...} }
  * Errors: { error: string }
+ * 
+ * IMPORTANT: Always calls external Bun backend at API_URL, never Next.js /api routes
  */
 async function apiFetch<T>(
   endpoint: string,
@@ -70,9 +110,37 @@ async function apiFetch<T>(
 ): Promise<{ data: T; meta?: any; error?: string }> {
   const { restaurantId, locale, currency, useApiKey, ...fetchOptions } = config;
 
+  // Runtime validation
+  if (!API_URL) {
+    console.error('❌ API_URL not configured. Set NEXT_PUBLIC_DASHBOARD_API_URL in .env.local');
+    return {
+      data: null as any,
+      error: 'API URL not configured. Please set NEXT_PUBLIC_DASHBOARD_API_URL environment variable.',
+    };
+  }
+
   try {
-    const url = `${API_URL}${endpoint}`;
+    // Construct absolute URL to external backend
+    // Add tenantId as query parameter if restaurantId is provided
+    let url = `${API_URL}${endpoint}`;
+    if (restaurantId) {
+      const separator = endpoint.includes('?') ? '&' : '?';
+      url = `${url}${separator}tenantId=${encodeURIComponent(restaurantId)}`;
+    }
+    
     const headers = getHeaders({ restaurantId, locale, currency, useApiKey });
+    const headersRecord = headers as Record<string, string>;
+
+    // Debug logging in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`🌐 API Call: ${fetchOptions.method || 'GET'} ${url}`);
+      console.log(`   Headers:`, {
+        'Authorization': headersRecord['Authorization'] ? 'Bearer ***' : 'NOT SET',
+        'X-Restaurant-Id': headersRecord['X-Restaurant-Id'] || 'NOT SET',
+        'X-API-Key': headersRecord['X-API-Key'] ? '***' : 'NOT SET',
+        'Accept-Language': headersRecord['Accept-Language'],
+      });
+    }
 
     const response = await fetch(url, {
       ...fetchOptions,
@@ -80,11 +148,29 @@ async function apiFetch<T>(
         ...headers,
         ...(fetchOptions.headers || {}),
       },
+      cache: fetchOptions.cache || 'no-store', // Default to no cache for fresh data
     });
+
+    // Check if we got HTML instead of JSON (indicates wrong endpoint)
+    const contentType = response.headers.get('content-type');
+    if (contentType?.includes('text/html')) {
+      console.error('❌ Received HTML instead of JSON. This usually means:');
+      console.error('   1. The API_URL is pointing to the wrong server');
+      console.error('   2. The endpoint does not exist on the backend');
+      console.error(`   Request URL: ${url}`);
+      console.error(`   Response Status: ${response.status}`);
+      return {
+        data: null as any,
+        error: 'Received HTML instead of JSON. Check API_URL configuration and endpoint path.',
+      };
+    }
 
     const payload = await response.json();
 
     if (!response.ok) {
+      console.error(`❌ API Error: ${response.status} ${response.statusText}`);
+      console.error(`   URL: ${url}`);
+      console.error(`   Error:`, payload);
       return {
         data: null as any,
         error: payload.error || `HTTP ${response.status}: ${response.statusText}`,
@@ -94,6 +180,9 @@ async function apiFetch<T>(
     // Per documentation: response is { data: T, meta?: {...} }
     // Some endpoints might return data directly for backwards compatibility
     if (payload.data !== undefined) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`✅ Success: ${endpoint}`);
+      }
       return {
         data: payload.data,
         meta: payload.meta,
@@ -101,11 +190,14 @@ async function apiFetch<T>(
     }
 
     // Fallback for endpoints that return data directly (backwards compatibility)
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`✅ Success (unwrapped): ${endpoint}`);
+    }
     return {
       data: payload as T,
     };
   } catch (error) {
-    console.error('API Error:', endpoint, error);
+    console.error('❌ API Error:', endpoint, error);
     return {
       data: null as any,
       error: error instanceof Error ? error.message : 'Network error',
@@ -117,32 +209,7 @@ async function apiFetch<T>(
 // DASHBOARD OVERVIEW
 // ============================================================================
 
-export interface DashboardOverview {
-  restaurantId: string;
-  restaurantName: string;
-  activeConversations: number;
-  pendingOrders: number;
-  slaBreaches: number;
-  quotaUsage: {
-    used: number;
-    limit: number;
-    remaining: number;
-    percentUsed: number;
-  };
-  ratingTrend: {
-    averageRating: number;
-    totalRatings: number;
-    trend: 'up' | 'down' | 'stable';
-    changePercent: number;
-  };
-  recentActivity: {
-    messagesLast24h: number;
-    ordersLast24h: number;
-    conversationsLast24h: number;
-  };
-}
-
-export async function fetchDashboardOverview(
+export async function getDashboardOverview(
   restaurantId: string,
   locale: Locale = 'en',
   currency: Currency = 'SAR'
@@ -157,34 +224,7 @@ export async function fetchDashboardOverview(
 // CONVERSATIONS
 // ============================================================================
 
-export interface Conversation {
-  id: string;
-  customerWa: string;
-  customerName: string;
-  lastMessageAt: string;
-  lastMessagePreview: string;
-  lastMessageRelative: string;
-  unreadCount: number;
-  channel: 'bot' | 'agent';
-  channelDisplay: string;
-  escalated: boolean;
-  slaStatus: {
-    breached: boolean;
-    minutesRemaining: number;
-  };
-}
-
-export interface ConversationsSummary {
-  conversations: Conversation[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
-
-export async function fetchConversations(
+export async function getConversations(
   restaurantId: string,
   params: {
     limit?: number;
@@ -204,28 +244,7 @@ export async function fetchConversations(
   );
 }
 
-export interface Message {
-  id: string;
-  fromPhone: string;
-  toPhone: string;
-  messageType: 'text' | 'image' | 'document' | 'audio' | 'video';
-  content: string;
-  mediaUrl: string | null;
-  timestamp: string;
-  timestampRelative: string;
-  isFromCustomer: boolean;
-  status: 'sent' | 'delivered' | 'read' | 'failed';
-}
-
-export interface ConversationTranscript {
-  conversationId: string;
-  customerName: string;
-  customerWa: string;
-  startedAt: string;
-  messages: Message[];
-}
-
-export async function fetchConversationTranscript(
+export async function getConversationTranscript(
   conversationId: string,
   restaurantId: string,
   locale: Locale = 'en'
@@ -254,7 +273,7 @@ export async function updateConversation(
 export async function exportConversation(
   conversationId: string,
   restaurantId: string
-): Promise<Blob | null> {
+): Promise<{ success: boolean; data?: Blob; error?: string }> {
   try {
     const headers = getHeaders({ restaurantId });
     const response = await fetch(
@@ -262,11 +281,18 @@ export async function exportConversation(
       { headers }
     );
 
-    if (!response.ok) return null;
-    return await response.blob();
+    if (!response.ok) {
+      return { success: false, error: 'Export failed' };
+    }
+
+    const blob = await response.blob();
+    return { success: true, data: blob };
   } catch (error) {
     console.error('Export error:', error);
-    return null;
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Export failed',
+    };
   }
 }
 
@@ -274,44 +300,7 @@ export async function exportConversation(
 // ORDERS
 // ============================================================================
 
-export type OrderStatus =
-  | 'CONFIRMED'
-  | 'PREPARING'
-  | 'OUT_FOR_DELIVERY'
-  | 'DELIVERED'
-  | 'CANCELLED';
-
-export interface Order {
-  id: string;
-  orderReference: string;
-  status: OrderStatus;
-  statusDisplay: string;
-  customerName: string;
-  totalCents: number;
-  totalFormatted: string;
-  currency: string;
-  itemCount: number;
-  createdAt: string;
-  createdAtRelative: string;
-  preparationTime: number;
-  alerts: {
-    isLate: boolean;
-    awaitingPayment: boolean;
-    requiresReview: boolean;
-  };
-}
-
-export interface OrdersLive {
-  orders: Order[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
-
-export async function fetchOrders(
+export async function getOrders(
   restaurantId: string,
   params: {
     limit?: number;
@@ -356,19 +345,7 @@ export async function updateOrderStatus(
   });
 }
 
-export interface OrderStats {
-  period: {
-    days: number;
-    startDate: string;
-    endDate: string;
-  };
-  totalOrders: number;
-  totalRevenue: number;
-  averageOrderValue: number;
-  statusBreakdown: Record<OrderStatus, number>;
-}
-
-export async function fetchOrderStats(
+export async function getOrderStats(
   restaurantId: string,
   params: { from?: string; to?: string; days?: number; locale?: Locale } = {}
 ) {
@@ -387,38 +364,15 @@ export async function fetchOrderStats(
 // RATINGS & REVIEWS
 // ============================================================================
 
-export interface RatingsAnalytics {
-  period: {
-    days: number;
-    startDate: string;
-    endDate: string;
-  };
-  summary: {
-    totalRatings: number;
-    averageRating: number;
-    nps: number;
-    responseRate: number;
-    trend: 'up' | 'down' | 'stable';
-    changePercent: number;
-  };
-  distribution: Record<number, number>;
-  segments: {
-    promoters: number;
-    passives: number;
-    detractors: number;
-    promotersPercent: number;
-    passivesPercent: number;
-    detractorsPercent: number;
-  };
-  withComments: number;
-}
-
-export async function fetchRatings(
+export async function getRatings(
   restaurantId: string,
   params: { from?: string; to?: string; days?: number; locale?: Locale } = {}
 ) {
   const { from, to, days, locale = 'en' } = params;
-  const query = new URLSearchParams();
+  const query = new URLSearchParams({
+    tenantId: restaurantId,
+    locale: locale,
+  });
   if (from) query.append('from', from);
   if (to) query.append('to', to);
   if (!from && !to && days) query.append('days', String(days));
@@ -428,27 +382,7 @@ export async function fetchRatings(
   });
 }
 
-export interface Review {
-  id: string;
-  conversationId: string;
-  customerName: string;
-  rating: number;
-  comment: string | null;
-  createdAt: string;
-  createdAtRelative: string;
-}
-
-export interface ReviewsList {
-  reviews: Review[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
-
-export async function fetchReviews(
+export async function getReviews(
   restaurantId: string,
   params: {
     page?: number;
@@ -467,8 +401,10 @@ export async function fetchReviews(
   } = params;
 
   const query = new URLSearchParams({
+    tenantId: restaurantId,
     page: String(page),
     pageSize: String(pageSize),
+    locale: locale,
   });
 
   if (typeof rating === 'number') query.append('rating', String(rating));
@@ -480,19 +416,13 @@ export async function fetchReviews(
   });
 }
 
-export interface RatingTimeline {
-  date: string;
-  averageRating: number;
-  totalRatings: number;
-}
-
-export async function fetchRatingTimeline(
+export async function getRatingTimeline(
   restaurantId: string,
   days: number = 30,
   locale: Locale = 'en'
 ) {
   return apiFetch<{ timeline: RatingTimeline[] }>(
-    `/api/ratings/timeline?days=${days}`,
+    `/api/ratings/timeline?tenantId=${restaurantId}&days=${days}&locale=${locale}`,
     { restaurantId, locale }
   );
 }
@@ -501,35 +431,7 @@ export async function fetchRatingTimeline(
 // NOTIFICATIONS
 // ============================================================================
 
-export type NotificationType =
-  | 'new_order'
-  | 'failed_send'
-  | 'quota_warning'
-  | 'template_expiring'
-  | 'sla_breach'
-  | 'webhook_error';
-
-export type NotificationSeverity = 'info' | 'warning' | 'error';
-
-export interface Notification {
-  id: string;
-  type: NotificationType;
-  severity: NotificationSeverity;
-  title: string;
-  message: string;
-  data?: any;
-  read: boolean;
-  createdAt: string;
-  createdAtRelative: string;
-}
-
-export interface NotificationsList {
-  notifications: Notification[];
-  unreadCount: number;
-  totalCount: number;
-}
-
-export async function fetchNotifications(
+export async function getNotifications(
   restaurantId: string,
   includeRead: boolean = false,
   locale: Locale = 'en'
@@ -558,37 +460,7 @@ export async function markNotificationRead(
 // BOT MANAGEMENT
 // ============================================================================
 
-export type BotStatus = 'ACTIVE' | 'PENDING' | 'FAILED';
-
-export interface BotInfo {
-  botId: string;
-  botName: string;
-  whatsappNumber: string;
-  status: BotStatus;
-  statusDisplay: string;
-  isVerified: boolean;
-  verifiedAt: string | null;
-  lastWebhookAt: string | null;
-  webhookHealth: {
-    healthy: boolean;
-    errorRate: number;
-    requestsLastHour: number;
-    errorsLastHour: number;
-  };
-  rateLimits: {
-    maxMessagesPerMin: number;
-    maxMessagesPerDay: number;
-  };
-  messagesLastHour: number;
-  messageHistory?: Array<{
-    timestamp: string;
-    sent: number;
-    received: number;
-    total: number;
-  }>;
-}
-
-export async function fetchBotStatus(
+export async function getBotStatus(
   restaurantId: string,
   includeHistory: boolean = false,
   locale: Locale = 'en'
@@ -621,38 +493,7 @@ export async function updateBotSettings(
 // TEMPLATES
 // ============================================================================
 
-export type TemplateStatus = 'APPROVED' | 'PENDING' | 'REJECTED';
-export type TemplateCategory =
-  | 'MARKETING'
-  | 'UTILITY'
-  | 'AUTHENTICATION'
-  | 'ORDER_STATUS'
-  | 'ORDER_UPDATE';
-
-export interface Template {
-  id: string;
-  name: string;
-  category: TemplateCategory;
-  language: string;
-  status: TemplateStatus;
-  bodyText: string;
-  footerText: string | null;
-  variables: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface TemplatesList {
-  templates: Template[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
-
-export async function fetchTemplates(
+export async function getTemplates(
   restaurantId: string,
   params: {
     status?: TemplateStatus;
@@ -683,7 +524,7 @@ export async function createTemplate(
   },
   restaurantId: string
 ) {
-  return apiFetch<{ template: Template }>(`/api/templates`, {
+  return apiFetch(`/api/templates`, {
     method: 'POST',
     body: JSON.stringify(template),
     restaurantId,
@@ -692,10 +533,10 @@ export async function createTemplate(
 
 export async function updateTemplate(
   templateId: string,
-  updates: Partial<Template>,
+  updates: any,
   restaurantId: string
 ) {
-  return apiFetch<{ template: Template }>(`/api/templates/${templateId}`, {
+  return apiFetch(`/api/templates/${templateId}`, {
     method: 'PATCH',
     body: JSON.stringify(updates),
     restaurantId,
@@ -713,89 +554,139 @@ export async function deleteTemplate(templateId: string, restaurantId: string) {
 // CATALOG
 // ============================================================================
 
-export interface Category {
-  id: string;
-  name: string;
-  itemCount: number;
-}
-
-export interface MenuItem {
-  id: string;
-  categoryId: string;
-  name: string;
-  nameEn?: string;
-  description?: string;
-  descriptionEn?: string;
-  price: number;
-  priceFormatted: string;
-  imageUrl?: string;
-  isAvailable: boolean;
-  calories?: number;
-  preparationTime?: number;
-}
-
-export interface Branch {
-  id: string;
-  name: string;
-  address: string;
-  isActive: boolean;
-}
-
-export interface SyncStatus {
-  lastSyncAt: string;
-  status: 'success' | 'failed' | 'in_progress';
-  itemsSynced: number;
-  errors: string[];
-}
-
-export async function fetchCategories(restaurantId: string, locale: Locale = 'en') {
-  return apiFetch<{ categories: Category[] }>(`/api/catalog/categories`, {
+export async function getCategories(restaurantId: string, locale: Locale = 'en') {
+  const result = await apiFetch<any>(`/api/catalog/categories`, {
     restaurantId,
     locale,
   });
-}
 
-export async function fetchBranches(restaurantId: string, locale: Locale = 'en') {
-  return apiFetch<{ branches: Branch[] }>(`/api/catalog/branches`, {
-    restaurantId,
-    locale,
-  });
-}
-
-export async function fetchSyncStatus(restaurantId: string, locale: Locale = 'en') {
-  return apiFetch<SyncStatus>(`/api/catalog/sync-status`, {
-    restaurantId,
-    locale,
-  });
-}
-
-export async function fetchMenuItems(restaurantId: string, locale: Locale = 'en', categoryId?: string) {
-  const params = new URLSearchParams({ locale });
-  if (categoryId) {
-    params.append('categoryId', categoryId);
+  if (result.error) {
+    return result;
   }
-  return apiFetch<{ items: MenuItem[] }>(`/api/catalog/items?${params.toString()}`, {
+
+  // Backend now returns categories directly in the correct format
+  const categories = (result.data?.categories || []).map((cat: any) => ({
+    id: cat.id,
+    name: cat.nameAr || cat.nameEn || cat.name || '',
+    nameAr: cat.nameAr,
+    nameEn: cat.nameEn,
+    itemCount: cat.itemCount || 0,
+    activeItemCount: cat.activeItemCount || 0,
+    displayOrder: cat.displayOrder || 0,
+    isActive: cat.isActive !== false,
+  }));
+
+  return {
+    data: { categories },
+    meta: result.meta,
+  };
+}
+
+export async function getBranches(restaurantId: string, locale: Locale = 'en') {
+  const result = await apiFetch<any>(`/api/catalog/branches`, {
     restaurantId,
     locale,
   });
+
+  if (result.error) {
+    return result;
+  }
+
+  // Backend now returns branches directly in the correct format
+  const branches = (result.data?.branches || []).map((branch: any) => ({
+    id: branch.id,
+    name: branch.name || branch.nameAr || branch.nameEn || '',
+    nameAr: branch.nameAr,
+    nameEn: branch.nameEn,
+    address: branch.address || '',
+    city: branch.city || '',
+    phone: branch.phone || '',
+    isActive: branch.isActive !== false,
+    latitude: branch.latitude,
+    longitude: branch.longitude,
+    workingHours: branch.workingHours,
+  }));
+
+  return {
+    data: { branches },
+    meta: result.meta,
+  };
+}
+
+export async function getSyncStatus(restaurantId: string, locale: Locale = 'en') {
+  const result = await apiFetch<any>(`/api/catalog/sync-status`, {
+    restaurantId,
+    locale,
+  });
+
+  if (result.error) {
+    return result;
+  }
+
+  // Backend now returns sync status directly
+  const syncData = result.data || {};
+  
+  return {
+    data: {
+      status: syncData.status || 'success' as const,
+      lastSyncAt: syncData.lastSyncAt || new Date().toISOString(),
+      itemsSynced: syncData.itemsSynced || 0,
+      errors: syncData.errors || [],
+    },
+    meta: result.meta,
+  };
+}
+
+export async function getMenuItems(restaurantId: string, locale: Locale = 'en', categoryId?: string) {
+  // Use the new dedicated /api/catalog/items endpoint
+  let endpoint = '/api/catalog/items';
+  if (categoryId) {
+    endpoint += `?categoryId=${encodeURIComponent(categoryId)}`;
+  }
+  
+  const result = await apiFetch<any>(endpoint, {
+    restaurantId,
+    locale,
+  });
+
+  if (result.error) {
+    return result;
+  }
+
+  // Backend now returns items directly in the correct format
+  const items = result.data?.items || [];
+
+  const transformedItems = items.map((item: any) => ({
+    id: item.id,
+    categoryId: item.categoryId,
+    name: locale === 'ar' ? (item.nameAr || item.name) : (item.name || item.nameAr),
+    nameAr: item.nameAr,
+    nameEn: item.name || item.nameEn,
+    description: locale === 'ar' ? (item.descriptionAr || item.description) : (item.description || item.descriptionAr),
+    descriptionAr: item.descriptionAr,
+    descriptionEn: item.description || item.descriptionEn,
+    price: item.price || 0,
+    priceAfter: item.priceAfter,
+    priceFormatted: `${item.price?.toFixed(2) || '0.00'} ${item.currency || 'SAR'}`,
+    imageUrl: item.imageUrl || '',
+    isAvailable: item.available !== false,
+    categoryName: item.categoryName || '',
+    categoryNameAr: item.categoryNameAr || '',
+    calories: item.calories,
+    preparationTime: item.preparationTime,
+  }));
+
+  return {
+    data: { items: transformedItems },
+    meta: result.meta,
+  };
 }
 
 // ============================================================================
 // SETTINGS & PROFILE
 // ============================================================================
 
-export interface RestaurantProfile {
-  id: string;
-  name: string;
-  description: string | null;
-  address: string | null;
-  phone: string | null;
-  logoUrl: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export async function fetchProfile(restaurantId: string, locale: Locale = 'en') {
+export async function getProfile(restaurantId: string, locale: Locale = 'en') {
   return apiFetch<RestaurantProfile>(`/api/settings/profile`, {
     restaurantId,
     locale,
@@ -806,32 +697,14 @@ export async function updateProfile(
   updates: Partial<RestaurantProfile>,
   restaurantId: string
 ) {
-  return apiFetch<{ profile: RestaurantProfile }>(`/api/settings/profile`, {
+  return apiFetch(`/api/settings/profile`, {
     method: 'PATCH',
     body: JSON.stringify(updates),
     restaurantId,
   });
 }
 
-export interface AuditLog {
-  id: string;
-  action: string;
-  userId: string;
-  details: any;
-  timestamp: string;
-}
-
-export interface AuditLogsList {
-  logs: AuditLog[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
-
-export async function fetchAuditLogs(
+export async function getAuditLogs(
   restaurantId: string,
   params: { limit?: number; offset?: number; locale?: Locale } = {}
 ) {
@@ -852,27 +725,7 @@ export async function fetchAuditLogs(
 // LOGS & MONITORING
 // ============================================================================
 
-export type LogSeverity = 'info' | 'warning' | 'error';
-
-export interface Log {
-  id: string;
-  severity: LogSeverity;
-  message: string;
-  details: any;
-  timestamp: string;
-}
-
-export interface LogsList {
-  logs: Log[];
-  pagination: {
-    total: number;
-    limit: number;
-    offset: number;
-    hasMore: boolean;
-  };
-}
-
-export async function fetchLogs(
+export async function getLogs(
   restaurantId: string,
   params: {
     limit?: number;
@@ -901,18 +754,25 @@ export async function exportLogs(
   restaurantId: string,
   startDate: string,
   endDate: string
-): Promise<Blob | null> {
+): Promise<{ success: boolean; data?: Blob; error?: string }> {
   try {
     const headers = getHeaders({ restaurantId });
     const query = new URLSearchParams({ start_date: startDate, end_date: endDate });
 
     const response = await fetch(`${API_URL}/api/logs/export?${query}`, { headers });
 
-    if (!response.ok) return null;
-    return await response.blob();
+    if (!response.ok) {
+      return { success: false, error: 'Export failed' };
+    }
+
+    const blob = await response.blob();
+    return { success: true, data: blob };
   } catch (error) {
     console.error('Export logs error:', error);
-    return null;
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Export failed',
+    };
   }
 }
 
@@ -920,35 +780,7 @@ export async function exportLogs(
 // ONBOARDING
 // ============================================================================
 
-export type OnboardingStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED';
-
-export interface OnboardingProgress {
-  status: OnboardingStatus;
-  progress: {
-    completed: number;
-    total: number;
-    percent: number;
-  };
-  checklist: Array<{
-    id: string;
-    title: string;
-    description: string;
-    completed: boolean;
-    required: boolean;
-  }>;
-  verification: {
-    userVerified: boolean;
-    botVerified: boolean;
-    timeline: Array<{
-      step: string;
-      status: 'completed' | 'in_progress' | 'failed';
-      timestamp: string;
-      error?: string;
-    }>;
-  };
-}
-
-export async function fetchOnboardingProgress(
+export async function getOnboardingProgress(
   restaurantId: string,
   locale: Locale = 'en'
 ) {
@@ -959,25 +791,17 @@ export async function fetchOnboardingProgress(
 // HEALTH CHECK
 // ============================================================================
 
-export interface HealthCheck {
-  status: 'ok' | 'degraded' | 'down';
-  timestamp: string;
-  services: {
-    database: 'up' | 'down';
-    redis: 'up' | 'down';
-    whatsapp: 'up' | 'down';
-  };
-}
-
 export async function checkHealth() {
   try {
-    const response = await fetch(`${API_URL}/api/health`);
+    const response = await fetch(`${API_URL}/api/health`, {
+      cache: 'no-store',
+    });
     return await response.json();
   } catch (error) {
     return { status: 'down', error: 'Cannot reach server' };
   }
 }
 
-// Re-export phone utilities for convenience
-export { formatPhoneForSufrah, formatPhoneForWhatsApp, normalizePhone, formatPhoneForDisplay, maskPhone } from './phone-utils';
+// Note: Phone utilities are not exported from here since this is a "use server" file
+// Import them directly from './phone-utils' if needed
 

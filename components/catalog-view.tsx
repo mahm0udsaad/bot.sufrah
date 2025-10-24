@@ -13,8 +13,11 @@ import { toast } from "sonner"
 
 export function CatalogView() {
   const { t, locale, dir } = useI18n()
-  const { categories, branches, syncStatus, loading, error } = useCatalog(locale as 'en' | 'ar')
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
+  const { categories, branches, items, syncStatus, loading, itemsLoading, error } = useCatalog(
+    locale as 'en' | 'ar', 
+    selectedCategory || undefined
+  )
   const isRtl = dir === "rtl"
 
   if (loading) {
@@ -78,7 +81,7 @@ export function CatalogView() {
               </div>
               <div className="text-right">
                 <p className="text-sm font-medium">{syncStatus.itemsSynced} {t("catalog.sync.items") || "items"}</p>
-                {syncStatus.errors.length > 0 && (
+                {syncStatus.errors && syncStatus.errors.length > 0 && (
                   <p className="text-xs text-red-600">{syncStatus.errors.length} {t("catalog.sync.errors") || "errors"}</p>
                 )}
               </div>
@@ -136,6 +139,13 @@ export function CatalogView() {
             </div>
           ) : (
             <div className="flex gap-2 overflow-x-auto pb-2">
+              <Button
+                variant={!selectedCategory ? "default" : "outline"}
+                onClick={() => setSelectedCategory(null)}
+                className="shrink-0"
+              >
+                {t("catalog.categories.all") || "All Items"}
+              </Button>
               {categories.map((category) => (
                 <Button
                   key={category.id}
@@ -148,6 +158,80 @@ export function CatalogView() {
                     {category.itemCount}
                   </Badge>
                 </Button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Menu Items */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>{t("catalog.items.title") || "Menu Items"}</CardTitle>
+            <Badge variant="secondary">
+              {items.length} {t("catalog.items.total") || "items"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {itemsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+          ) : items.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              {t("catalog.items.empty") || "No items found"}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {items.map((item) => (
+                <Card key={item.id} className="overflow-hidden">
+                  {item.imageUrl && (
+                    <div className="relative w-full h-48 bg-gray-100">
+                      <Image
+                        src={item.imageUrl}
+                        alt={item.name}
+                        fill
+                        className="object-cover"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      />
+                    </div>
+                  )}
+                  <CardContent className="p-4">
+                    <div className="space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <h3 className="font-semibold line-clamp-2">{item.name}</h3>
+                        {!item.isAvailable && (
+                          <Badge variant="destructive" className="shrink-0">
+                            {t("catalog.items.unavailable") || "Unavailable"}
+                          </Badge>
+                        )}
+                      </div>
+                      {item.description && (
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                          {item.description}
+                        </p>
+                      )}
+                      <div className="flex items-center justify-between pt-2">
+                        <span className="text-lg font-bold text-primary">
+                          {item.priceFormatted}
+                        </span>
+                        {item.calories && (
+                          <span className="text-xs text-muted-foreground">
+                            {item.calories} {t("catalog.items.cal") || "cal"}
+                          </span>
+                        )}
+                      </div>
+                      {item.preparationTime && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          <span>{item.preparationTime} {t("catalog.items.min") || "min"}</span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
           )}

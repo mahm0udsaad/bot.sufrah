@@ -87,7 +87,10 @@ export const db = {
 
   // Restaurants
   async getPrimaryRestaurantByUserId(userId: string) {
-    return prisma.restaurant.findFirst({ where: { userId } })
+    return prisma.restaurant.findFirst({ 
+      where: { userId },
+      include: { bots: true } // Include bot relation
+    })
   },
 
   async getRestaurantById(restaurantId: string) {

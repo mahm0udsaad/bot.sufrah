@@ -98,6 +98,18 @@ TWILIO_PHONE_NUMBER=your-twilio-phone-number
 ```
 
 - **Required**: Only if using Twilio for WhatsApp messaging
+
+#### WhatsApp Send API
+
+```env
+WHATSAPP_SEND_TOKEN=your-secure-whatsapp-send-token
+BOT_API_URL=https://bot.sufrah.sa
+```
+
+- **Required**: Yes (for sending verification codes via WhatsApp)
+- **Purpose**: Authenticates with the WhatsApp Send API endpoint
+- **Security**: Keep this secret! Must match the `WHATSAPP_SEND_TOKEN` configured in your bot backend
+- **Note**: The bot backend automatically handles 24-hour messaging windows and template fallbacks
 - **Get From**: [Twilio Console](https://console.twilio.com/)
 
 ### Feature Flags

@@ -43,6 +43,15 @@ const ar = {
     adminSection: "المشرف",
     searchPlaceholder: "ابحث في المحادثات...",
   },
+  notifications: {
+    title: "الإشعارات",
+    markAllRead: "تعليم الكل كمقروء",
+    empty: "لا توجد إشعارات بعد",
+    error: {
+      fetch: "فشل تحميل الإشعارات",
+      markRead: "فشل تعليم كمقروء",
+    },
+  },
   dashboard: {
     overview: {
       title: "لوحة التحكم",
@@ -269,11 +278,34 @@ const ar = {
   catalog: {
     header: {
       title: "القائمة",
-      subtitle: "إدارة المنتجات والفئات والفروع",
+      subtitle: "تصفح قائمة الطعام والفروع",
+    },
+    error: "فشل في تحميل القائمة",
+    sync: {
+      success: "تم المزامنة بنجاح",
+      failed: "فشلت المزامنة",
+      inProgress: "جاري المزامنة...",
+      lastSync: "آخر مزامنة:",
+      items: "عناصر",
+      errors: "أخطاء",
+    },
+    stats: {
+      categories: "الفئات",
+      branches: "الفروع",
+      active: "الفروع النشطة",
     },
     categories: {
       title: "الفئات",
       empty: "لا توجد فئات",
+      all: "جميع العناصر",
+    },
+    items: {
+      title: "عناصر القائمة",
+      total: "عناصر",
+      empty: "لا توجد عناصر",
+      unavailable: "غير متاح",
+      cal: "سعرة",
+      min: "دقيقة",
     },
     products: {
       title: "المنتجات",
@@ -296,6 +328,9 @@ const ar = {
       noAddress: "لا يوجد عنوان",
       emptyTitle: "لا توجد فروع",
       emptySubtitle: "أضف أول فرع لديك",
+      total: "إجمالي",
+      active: "نشط",
+      inactive: "غير نشط",
     },
   },
   ratings: {

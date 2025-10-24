@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Search, Download, RefreshCw, Eye, Clock, Loader2, Package, DollarSign, AlertTriangle, CheckCircle2 } from "lucide-react"
 import { toast } from "sonner"
 import { useOrdersPaginated, useOrderStats } from "@/hooks/use-dashboard-api"
-import { updateOrderStatus, type Order, type OrderStatus } from "@/lib/dashboard-api"
+import { updateOrderStatus } from "@/lib/dashboard-actions"
+import type { Order, OrderStatus } from "@/lib/dashboard-api"
 import { useI18n } from "@/hooks/use-i18n"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
@@ -33,7 +34,8 @@ function OrdersContent() {
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   
   const isRtl = dir === "rtl"
-  const restaurantId = user?.restaurant?.id || ''
+  // Use tenantId (bot ID) for API calls to external bot server
+  const tenantId = user?.tenantId || user?.restaurant?.id || ''
 
   // Fetch orders with pagination
   const {
@@ -91,14 +93,14 @@ function OrdersContent() {
   }, [orders, searchQuery])
 
   const handleStatusUpdate = async (orderId: string, newStatus: OrderStatus) => {
-    if (!restaurantId) {
+    if (!tenantId) {
       toast.error(t("orders.toasts.noRestaurant") || "No restaurant selected")
       return
     }
 
     try {
       setUpdatingId(orderId)
-      const result = await updateOrderStatus(orderId, newStatus, restaurantId)
+      const result = await updateOrderStatus(orderId, newStatus, tenantId)
       
       if (result.error) {
         toast.error(t("orders.toasts.updateFailed") || `Failed to update: ${result.error}`)

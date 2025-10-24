@@ -57,7 +57,6 @@ export function DashboardOverview({ overview, error, restaurantName }: Dashboard
     ],
     [t],
   )
-
   const messagesUsed = overview?.quotaUsage?.used || 0
   const messagesLimit = overview?.quotaUsage?.limit || 5000
   const usagePercentage = overview?.quotaUsage?.percentUsed || 0

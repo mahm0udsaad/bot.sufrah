@@ -121,12 +121,8 @@ async function apiFetch<T>(
 
   try {
     // Construct absolute URL to external backend
-    // Add tenantId as query parameter if restaurantId is provided
+    // Use X-Restaurant-Id header for tenant isolation (no tenantId query param)
     let url = `${API_URL}${endpoint}`;
-    if (restaurantId) {
-      const separator = endpoint.includes('?') ? '&' : '?';
-      url = `${url}${separator}tenantId=${encodeURIComponent(restaurantId)}`;
-    }
     
     const headers = getHeaders({ restaurantId, locale, currency, useApiKey });
     const headersRecord = headers as Record<string, string>;
@@ -370,7 +366,7 @@ export async function getRatings(
 ) {
   const { from, to, days, locale = 'en' } = params;
   const query = new URLSearchParams({
-    tenantId: restaurantId,
+    // tenant is provided via X-Restaurant-Id header
     locale: locale,
   });
   if (from) query.append('from', from);
@@ -401,7 +397,7 @@ export async function getReviews(
   } = params;
 
   const query = new URLSearchParams({
-    tenantId: restaurantId,
+    // tenant is provided via X-Restaurant-Id header
     page: String(page),
     pageSize: String(pageSize),
     locale: locale,
@@ -422,7 +418,7 @@ export async function getRatingTimeline(
   locale: Locale = 'en'
 ) {
   return apiFetch<{ timeline: RatingTimeline[] }>(
-    `/api/ratings/timeline?tenantId=${restaurantId}&days=${days}&locale=${locale}`,
+    `/api/ratings/timeline?days=${days}&locale=${locale}`,
     { restaurantId, locale }
   );
 }
@@ -917,6 +913,7 @@ export async function getRestaurantUsageDetails(
     `/api/usage/details`,
     { restaurantId, locale }
   );
+  
 }
 
 /**

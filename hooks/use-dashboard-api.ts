@@ -1088,9 +1088,8 @@ export function useRestaurantUsageDetails(locale: Locale = 'en') {
   const [data, setData] = useState<api.UsageDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
   const tenantId = user?.tenantId || user?.restaurant?.id || '';
-
+  
   const fetchData = useCallback(async () => {
     if (!tenantId) return;
 

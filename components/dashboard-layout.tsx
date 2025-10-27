@@ -111,30 +111,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                   {item.label}
                 </a>
               ))}
-              
-              {isAdmin && (
-                <>
-                  <div className="my-4 border-t border-sidebar-border" />
-                  <div className="px-3 py-2 text-xs font-semibold text-sidebar-foreground/60 uppercase">
-                    {t("navigation.adminSection")}
-                  </div>
-                  {adminNavigation.map((item) => (
-                    <a
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors mb-1",
-                        item.isActive
-                          ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                      )}
-                    >
-                      <item.icon className="h-4 w-4" />
-                      {item.label}
-                    </a>
-                  ))}
-                </>
-              )}
             </nav>
             <div className="absolute bottom-0 left-0 right-0 border-t border-sidebar-border p-4 bg-sidebar">
               <SignOutButton variant="ghost" size="sm" className="w-full justify-start" />

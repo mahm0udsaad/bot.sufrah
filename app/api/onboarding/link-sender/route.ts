@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 
     const normalizedNumber = normalizePlus(extBot.whatsappNumber)
 
-    // Upsert local RestaurantBot record
+    // Upsert local RestaurantBot record using the Bot ID from external server
     const existingBotRecord = await prisma.restaurantBot.findFirst({ where: { restaurantId: currentRestaurantId } })
 
     const botData = {
@@ -102,7 +102,14 @@ export async function POST(request: NextRequest) {
 
     const localBot = existingBotRecord
       ? await prisma.restaurantBot.update({ where: { id: existingBotRecord.id }, data: botData })
-      : await prisma.restaurantBot.create({ data: { ...botData, restaurantId: currentRestaurantId } })
+      : await prisma.restaurantBot.create({ 
+          data: { 
+            // Use the Bot ID from external server
+            id: botId,
+            ...botData, 
+            restaurantId: currentRestaurantId 
+          } 
+        })
 
     // Update Restaurant profile number to normalized digits
     await prisma.restaurant.update({ where: { id: currentRestaurantId }, data: { whatsappNumber: normalizedNumber } })

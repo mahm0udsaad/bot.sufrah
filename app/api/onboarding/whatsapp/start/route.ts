@@ -272,7 +272,56 @@ export async function POST(request: Request) {
       console.log(`[WhatsApp Start] ✓ Verification requested! SID: ${verificationSid}`)
     }
 
-    console.log("\n========== [WhatsApp Start] Step 6: Save to Database ==========")
+    console.log("\n========== [WhatsApp Start] Step 6: Register Bot with External Server ==========")
+    // First, register the bot with the external bot server to get the Bot ID
+    const botApiUrl = process.env.BOT_API_URL || process.env.BOT_URL || "https://bot.sufrah.sa/api"
+    const botApiToken = process.env.BOT_API_TOKEN || process.env.DASHBOARD_PAT
+    
+    if (!botApiToken) {
+      console.error("[WhatsApp Start] ❌ Missing BOT_API_TOKEN or DASHBOARD_PAT")
+      throw new Error("Bot API token not configured")
+    }
+
+    const botRegistrationData = {
+      name: displayName,
+      restaurantName: restaurant.name,
+      whatsappNumber: normalizedPhone,
+      accountSid,
+      authToken,
+      senderSid: senderData.sid,
+      wabaId: wabaId,
+      status: "VERIFYING",
+      isActive: true,
+    }
+
+    console.log(`[WhatsApp Start] 🔄 Registering bot with external server: ${botApiUrl}/admin/bots`)
+    
+    let externalBotId: string | null = null
+    try {
+      const externalBotResponse = await fetch(`${botApiUrl}/admin/bots`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${botApiToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(botRegistrationData),
+      })
+
+      if (externalBotResponse.ok) {
+        const externalBot = await externalBotResponse.json()
+        externalBotId = externalBot.id
+        console.log(`[WhatsApp Start] ✓ Bot registered with external server. Bot ID: ${externalBotId}`)
+      } else {
+        const errorText = await externalBotResponse.text()
+        console.warn(`[WhatsApp Start] ⚠️ External bot registration failed (${externalBotResponse.status}): ${errorText}`)
+        console.warn(`[WhatsApp Start] Continuing with local-only registration...`)
+      }
+    } catch (externalError) {
+      console.warn(`[WhatsApp Start] ⚠️ Could not register with external bot server:`, externalError)
+      console.warn(`[WhatsApp Start] Continuing with local-only registration...`)
+    }
+
+    console.log("\n========== [WhatsApp Start] Step 7: Save to Local Database ==========")
     // Use findFirst + update/create pattern to avoid issues with nullable unique fields in upsert
     const existingBotRecord = await prisma.restaurantBot.findFirst({
       where: { restaurantId: restaurant.id },
@@ -300,14 +349,17 @@ export async function POST(request: Request) {
         })
       : await prisma.restaurantBot.create({
           data: {
+            // Use external bot ID if available, otherwise let Prisma generate one
+            ...(externalBotId ? { id: externalBotId } : {}),
             ...botData,
             restaurantId: restaurant.id,
           },
         })
     console.log(`[WhatsApp Start] ✓ Bot saved to database: ${bot.id}`)
+    console.log(`[WhatsApp Start] ✓ Bot ID source: ${externalBotId ? 'external server' : 'local generation'}`)
     console.log(`[WhatsApp Start] ✓ Status: ${bot.status}`)
 
-    console.log("\n========== [WhatsApp Start] Step 7: SUCCESS ==========")
+    console.log("\n========== [WhatsApp Start] Step 8: SUCCESS ==========")
     
     if (verificationSid) {
       console.log(`[WhatsApp Start] ✅ OTP sent to ${normalizedPhone}`)

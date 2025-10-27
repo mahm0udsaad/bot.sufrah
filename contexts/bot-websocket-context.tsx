@@ -413,7 +413,12 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
         content: m.content ?? m.body ?? "",
         media_url: m.media_url ?? m.mediaUrl ?? null,
         timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
-        is_from_customer: typeof m.is_from_customer === "boolean" ? m.is_from_customer : (m.direction ?? "OUT") === "IN",
+        is_from_customer:
+          typeof m.is_from_customer === "boolean"
+            ? m.is_from_customer
+            : ["IN", "INBOUND", "CUSTOMER"].includes(
+                String(m.direction ?? m.sender_type ?? "").trim().toUpperCase(),
+              ),
         content_sid: m.contentSid ?? m.content_sid,
         variables: m.variables ?? undefined,
         template_preview: m.templatePreview ?? m.template_preview ?? undefined,
@@ -433,7 +438,12 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
       content: m.content ?? m.body ?? "",
       media_url: m.media_url ?? m.mediaUrl ?? null,
       timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
-      is_from_customer: typeof m.is_from_customer === "boolean" ? m.is_from_customer : (m.direction ?? "OUT") === "IN",
+      is_from_customer:
+        typeof m.is_from_customer === "boolean"
+          ? m.is_from_customer
+          : ["IN", "INBOUND", "CUSTOMER"].includes(
+              String(m.direction ?? m.sender_type ?? "").trim().toUpperCase(),
+            ),
       content_sid: m.contentSid ?? m.content_sid,
       variables: m.variables ?? undefined,
       template_preview: m.templatePreview ?? m.template_preview ?? undefined,

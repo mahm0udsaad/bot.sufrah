@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AuthGuard } from "@/components/auth-guard"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
@@ -25,6 +26,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth"
+import { useI18n } from "@/hooks/use-i18n"
 
 interface RestaurantBot {
   id: string
@@ -49,35 +51,36 @@ interface RestaurantBot {
   updatedAt: string
 }
 
-const STATUS_CONFIG = {
-  PENDING: { 
-    label: "Pending Verification", 
-    icon: Clock, 
+const STATUS_META = {
+  PENDING: {
+    labelKey: "botManagement.status.pending",
+    descriptionKey: "botManagement.statusDescriptions.pending",
+    icon: Clock,
     badge: "bg-yellow-100 text-yellow-800",
-    description: "Waiting for sender verification"
   },
-  VERIFYING: { 
-    label: "Verifying", 
-    icon: RefreshCw, 
+  VERIFYING: {
+    labelKey: "botManagement.status.verifying",
+    descriptionKey: "botManagement.statusDescriptions.verifying",
+    icon: RefreshCw,
     badge: "bg-blue-100 text-blue-800",
-    description: "Verification in progress"
   },
-  ACTIVE: { 
-    label: "Active", 
-    icon: CheckCircle2, 
+  ACTIVE: {
+    labelKey: "botManagement.status.active",
+    descriptionKey: "botManagement.statusDescriptions.active",
+    icon: CheckCircle2,
     badge: "bg-green-100 text-green-800",
-    description: "Bot is operational"
   },
-  FAILED: { 
-    label: "Failed", 
-    icon: XCircle, 
+  FAILED: {
+    labelKey: "botManagement.status.failed",
+    descriptionKey: "botManagement.statusDescriptions.failed",
+    icon: XCircle,
     badge: "bg-red-100 text-red-800",
-    description: "Verification or setup failed"
   },
 }
 
 function BotManagementContent() {
   const { user } = useAuth()
+  const { t } = useI18n()
   const [bot, setBot] = useState<RestaurantBot | null>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
@@ -97,7 +100,7 @@ function BotManagementContent() {
       }
     } catch (error) {
       console.error("Failed to load bot data:", error)
-      toast.error("Unable to load bot management data")
+      toast.error(t("botManagement.toasts.loadFailed"))
     } finally {
       setLoading(false)
     }
@@ -127,11 +130,13 @@ function BotManagementContent() {
       const data = await response.json()
       if (data.success && data.bot) {
         setBot(data.bot)
-        toast.success(data.bot.isActive ? "Bot activated successfully" : "Bot deactivated successfully")
+        toast.success(
+          data.bot.isActive ? t("botManagement.toasts.activated") : t("botManagement.toasts.deactivated"),
+        )
       }
     } catch (error) {
       console.error("Failed to toggle bot:", error)
-      toast.error("Unable to update bot activation status")
+      toast.error(t("botManagement.toasts.activationFailed"))
     } finally {
       setUpdating(false)
     }
@@ -155,11 +160,11 @@ function BotManagementContent() {
       const data = await response.json()
       if (data.success && data.bot) {
         setBot(data.bot)
-        toast.success("Rate limits updated successfully")
+        toast.success(t("botManagement.toasts.limitsUpdated"))
       }
     } catch (error) {
       console.error("Failed to update limits:", error)
-      toast.error("Unable to update rate limits")
+      toast.error(t("botManagement.toasts.limitsFailed"))
     } finally {
       setUpdating(false)
     }
@@ -180,21 +185,26 @@ function BotManagementContent() {
       <Alert>
         <AlertTriangle className="h-4 w-4" />
         <AlertDescription>
-          No bot configuration found for this restaurant. Please complete onboarding first.
+          {t("botManagement.empty.noBot")}
         </AlertDescription>
+        <div className="mt-3">
+          <Button asChild>
+            <Link href="/onboarding">{t("botManagement.empty.onboardCta")}</Link>
+          </Button>
+        </div>
       </Alert>
     )
   }
 
-  const statusConfig = STATUS_CONFIG[bot.status]
+  const statusConfig = STATUS_META[bot.status]
   const StatusIcon = statusConfig.icon
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Bot Management</h1>
-        <p className="text-muted-foreground">Configure and monitor your WhatsApp bot</p>
+        <h1 className="text-2xl font-bold text-foreground">{t("botManagement.header.title")}</h1>
+        <p className="text-muted-foreground">{t("botManagement.header.subtitle")}</p>
       </div>
 
       {/* Status Card */}
@@ -212,29 +222,29 @@ function BotManagementContent() {
             </div>
             <Badge className={statusConfig.badge}>
               <StatusIcon className="h-3 w-3 mr-1" />
-              {statusConfig.label}
+              {t(statusConfig.labelKey)}
             </Badge>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <Label className="text-sm text-muted-foreground">WhatsApp Number</Label>
+              <Label className="text-sm text-muted-foreground">{t("botManagement.fields.whatsappNumber")}</Label>
               <p className="text-sm font-medium">{bot.whatsappNumber}</p>
             </div>
             <div>
-              <Label className="text-sm text-muted-foreground">Status</Label>
-              <p className="text-sm font-medium">{statusConfig.description}</p>
+              <Label className="text-sm text-muted-foreground">{t("botManagement.fields.status")}</Label>
+              <p className="text-sm font-medium">{t(statusConfig.descriptionKey)}</p>
             </div>
             {bot.verifiedAt && (
               <div>
-                <Label className="text-sm text-muted-foreground">Verified At</Label>
+                <Label className="text-sm text-muted-foreground">{t("botManagement.fields.verifiedAt")}</Label>
                 <p className="text-sm font-medium">{new Date(bot.verifiedAt).toLocaleString()}</p>
               </div>
             )}
             {bot.wabaId && (
               <div>
-                <Label className="text-sm text-muted-foreground">WhatsApp Business Account ID</Label>
+                <Label className="text-sm text-muted-foreground">{t("botManagement.fields.wabaId")}</Label>
                 <p className="text-sm font-medium font-mono text-xs">{bot.wabaId}</p>
               </div>
             )}
@@ -250,9 +260,11 @@ function BotManagementContent() {
           {/* Activation Toggle */}
           <div className="flex items-center justify-between pt-4 border-t">
             <div>
-              <Label className="text-sm font-medium">Bot Activation</Label>
+              <Label className="text-sm font-medium">{t("botManagement.activation.title")}</Label>
               <p className="text-sm text-muted-foreground">
-                {bot.isActive ? "Bot is currently active and responding to messages" : "Bot is currently inactive"}
+                {bot.isActive
+                  ? t("botManagement.activation.activeDescription")
+                  : t("botManagement.activation.inactiveDescription")}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -272,14 +284,14 @@ function BotManagementContent() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
-            Rate Limits
+            {t("botManagement.rateLimits.title")}
           </CardTitle>
-          <CardDescription>Control message sending limits to prevent throttling</CardDescription>
+          <CardDescription>{t("botManagement.rateLimits.description")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <Label htmlFor="maxPerMin">Messages per Minute</Label>
+              <Label htmlFor="maxPerMin">{t("botManagement.rateLimits.perMinuteLabel")}</Label>
               <Input
                 id="maxPerMin"
                 type="number"
@@ -294,11 +306,11 @@ function BotManagementContent() {
                 max={1000}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Current: {bot.maxMessagesPerMin} msg/min
+                {t("botManagement.rateLimits.currentPerMin", { values: { count: bot.maxMessagesPerMin } })}
               </p>
             </div>
             <div>
-              <Label htmlFor="maxPerDay">Messages per Day</Label>
+              <Label htmlFor="maxPerDay">{t("botManagement.rateLimits.perDayLabel")}</Label>
               <Input
                 id="maxPerDay"
                 type="number"
@@ -313,7 +325,7 @@ function BotManagementContent() {
                 max={100000}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Current: {bot.maxMessagesPerDay} msg/day
+                {t("botManagement.rateLimits.currentPerDay", { values: { count: bot.maxMessagesPerDay } })}
               </p>
             </div>
           </div>
@@ -326,7 +338,7 @@ function BotManagementContent() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Phone className="h-5 w-5" />
-              Support Contact
+              {t("botManagement.support.title")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -334,11 +346,11 @@ function BotManagementContent() {
               <div>
                 <p className="text-sm font-medium">{bot.supportContact}</p>
                 <Button variant="outline" size="sm" className="mt-2" asChild>
-                  <a href={`tel:${bot.supportContact}`}>Call Support</a>
+                  <a href={`tel:${bot.supportContact}`}>{t("botManagement.support.callSupport")}</a>
                 </Button>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No support contact configured</p>
+              <p className="text-sm text-muted-foreground">{t("botManagement.support.empty")}</p>
             )}
           </CardContent>
         </Card>
@@ -347,7 +359,7 @@ function BotManagementContent() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5" />
-              Payment Link
+              {t("botManagement.payment.title")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -356,12 +368,12 @@ function BotManagementContent() {
                 <p className="text-sm font-medium truncate">{bot.paymentLink}</p>
                 <Button variant="outline" size="sm" className="mt-2" asChild>
                   <a href={bot.paymentLink} target="_blank" rel="noopener noreferrer">
-                    Open Payment Link
+                    {t("botManagement.payment.open")}
                   </a>
                 </Button>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No payment link configured</p>
+              <p className="text-sm text-muted-foreground">{t("botManagement.payment.empty")}</p>
             )}
           </CardContent>
         </Card>
@@ -370,30 +382,30 @@ function BotManagementContent() {
       {/* Twilio Configuration (Read-only) */}
       <Card>
         <CardHeader>
-          <CardTitle>Twilio Configuration</CardTitle>
-          <CardDescription>Read-only view of Twilio sender configuration</CardDescription>
+          <CardTitle>{t("botManagement.twilio.title")}</CardTitle>
+          <CardDescription>{t("botManagement.twilio.description")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-3 md:grid-cols-2 text-sm">
             <div>
-              <Label className="text-muted-foreground">Account SID</Label>
+              <Label className="text-muted-foreground">{t("botManagement.twilio.accountSid")}</Label>
               <p className="font-mono text-xs mt-1">{bot.accountSid}</p>
             </div>
             {bot.subaccountSid && (
               <div>
-                <Label className="text-muted-foreground">Subaccount SID</Label>
+                <Label className="text-muted-foreground">{t("botManagement.twilio.subaccountSid")}</Label>
                 <p className="font-mono text-xs mt-1">{bot.subaccountSid}</p>
               </div>
             )}
             {bot.senderSid && (
               <div>
-                <Label className="text-muted-foreground">Sender SID</Label>
+                <Label className="text-muted-foreground">{t("botManagement.twilio.senderSid")}</Label>
                 <p className="font-mono text-xs mt-1">{bot.senderSid}</p>
               </div>
             )}
             {bot.verificationSid && (
               <div>
-                <Label className="text-muted-foreground">Verification SID</Label>
+                <Label className="text-muted-foreground">{t("botManagement.twilio.verificationSid")}</Label>
                 <p className="font-mono text-xs mt-1">{bot.verificationSid}</p>
               </div>
             )}
@@ -405,7 +417,7 @@ function BotManagementContent() {
       <div className="flex justify-end">
         <Button variant="outline" onClick={fetchBotData} disabled={loading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-          Refresh Data
+          {t("botManagement.actions.refresh")}
         </Button>
       </div>
     </div>

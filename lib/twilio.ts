@@ -124,8 +124,15 @@ export async function sendVerificationWhatsApp(phoneNumber: string, code: string
     }
 
     // Call the WhatsApp Send API
-    const apiUrl = botApiUrl.replace(/\/api$/, "") // Remove /api suffix if present
-    const response = await fetch(`${apiUrl}/api/whatsapp/send`, {
+    const trimmedBotUrl = botApiUrl.trim()
+    let apiBase = trimmedBotUrl.replace(/\/+$/, "")
+    if (!apiBase) {
+      apiBase = "https://bot.sufrah.sa"
+    }
+    if (apiBase.endsWith("/api")) {
+      apiBase = apiBase.slice(0, -4)
+    }
+    const response = await fetch(`${apiBase}/api/whatsapp/send`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${whatsappSendToken}`,
@@ -136,25 +143,51 @@ export async function sendVerificationWhatsApp(phoneNumber: string, code: string
         text: messageText,
       }),
     })
-
-    const data = await response.json()
+    console.log("response", response)
+    const contentType = response.headers.get("content-type") || ""
+    let parsedBody: any = null
+    let rawText: string | null = null
+    console.log("contentType", contentType)
+    if (contentType.includes("application/json")) {
+      try {
+        parsedBody = await response.json()
+        console.log("parsedBody", parsedBody)
+      } catch {
+        // Fall back to text if JSON parsing fails
+        rawText = await response.text().catch(() => "")
+      }
+    } else {
+      rawText = await response.text().catch(() => "")
+      // Attempt best-effort JSON parse from text if it looks like JSON
+      if (rawText && rawText.trim().startsWith("{")) {
+        try {
+          parsedBody = JSON.parse(rawText)
+        } catch {
+          // keep rawText
+        }
+      }
+    }
 
     if (!response.ok) {
-      console.error("[whatsapp-send-api] Error response:", data)
+      const errorMessageFromBody = (parsedBody && parsedBody.error) || (parsedBody && parsedBody.message)
+      const fallbackText = rawText && rawText.trim().length > 0 ? rawText : undefined
+      const combinedMessage = errorMessageFromBody || fallbackText || "Failed to send verification code"
+      console.error("[whatsapp-send-api] Error response:", parsedBody ?? rawText)
       return {
         success: false,
-        error: data.error || `Failed to send verification code (status: ${response.status})`,
+        error: `${combinedMessage} (status: ${response.status})`,
       }
     }
 
     if (twilioDebug) {
-      console.log("[whatsapp-send-api] Success:", data)
+      console.log("[whatsapp-send-api] Success:", parsedBody ?? rawText)
     }
 
+    const successData = parsedBody ?? {}
     return {
       success: true,
-      messageId: data.jobId || data.sid || "queued",
-      message: data.message || "Verification code sent via WhatsApp",
+      messageId: successData.jobId || successData.sid || "queued",
+      message: successData.message || (rawText && rawText.trim()) || "Verification code sent via WhatsApp",
     }
   } catch (error: any) {
     console.error("WhatsApp Send API error:", error)

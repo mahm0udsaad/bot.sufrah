@@ -45,6 +45,12 @@ function RatingsContent() {
   const [searchQuery, setSearchQuery] = useState("")
   
   const isRtl = dir === "rtl"
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale])
+  const decimalFormatter = useMemo(
+    () => new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+    [locale],
+  )
+  const percentSymbol = locale === "ar" ? "٪" : "%"
 
   // Fetch ratings analytics
   const {
@@ -71,6 +77,19 @@ function RatingsContent() {
     data: timelineData,
     loading: timelineLoading,
   } = useRatingTimeline(days, locale as 'en' | 'ar')
+
+  const npsScore = ratingsData?.summary.nps ?? 0
+  const totalRatings = ratingsData?.summary.totalRatings ?? 0
+  const averageRating = ratingsData?.summary.averageRating ?? 0
+  const responseRate = ratingsData?.summary.responseRate ?? 0
+  const commentsCount = ratingsData?.withComments ?? 0
+  const changePercent = ratingsData?.summary.changePercent
+  const promotersCount = ratingsData?.segments.promoters ?? 0
+  const passivesCount = ratingsData?.segments.passives ?? 0
+  const detractorsCount = ratingsData?.segments.detractors ?? 0
+  const promotersPercent = ratingsData?.segments.promotersPercent ?? 0
+  const passivesPercent = ratingsData?.segments.passivesPercent ?? 0
+  const detractorsPercent = ratingsData?.segments.detractorsPercent ?? 0
 
   // Filter reviews by search
   const filteredReviews = useMemo(() => {
@@ -155,18 +174,18 @@ function RatingsContent() {
               <div className="relative">
                 <div className={cn(
                   "text-4xl font-bold",
-                  ratingsData && ratingsData.summary.nps >= 50 ? "text-green-600" :
-                  ratingsData && ratingsData.summary.nps >= 0 ? "text-yellow-600" : "text-red-600"
+                  npsScore >= 50 ? "text-green-600" :
+                  npsScore >= 0 ? "text-yellow-600" : "text-red-600"
                 )}>
-                  {ratingsData?.summary.nps ?? 0}
+                  {numberFormatter.format(npsScore)}
                 </div>
                 {ratingsData?.summary.trend === 'up' && <TrendingUp className="absolute -right-6 top-1 h-4 w-4 text-green-600" />}
                 {ratingsData?.summary.trend === 'down' && <TrendingDown className="absolute -right-6 top-1 h-4 w-4 text-red-600" />}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                {ratingsData?.summary.changePercent ? 
-                  `${ratingsData.summary.changePercent > 0 ? '+' : ''}${ratingsData.summary.changePercent.toFixed(1)}% ${t("ratings.metrics.nps.vsLastPeriod") || "vs last period"}` :
-                  t("ratings.metrics.nps.noChange") || "No change"}
+                {typeof changePercent === "number"
+                  ? `${changePercent > 0 ? "+" : changePercent < 0 ? "-" : ""}${decimalFormatter.format(Math.abs(changePercent))}${percentSymbol} ${t("ratings.metrics.nps.vsLastPeriod") || "vs last period"}`
+                  : t("ratings.metrics.nps.noChange") || "No change"}
               </p>
             </div>
           </CardContent>
@@ -177,7 +196,7 @@ function RatingsContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">{t("ratings.metrics.total.title") || "Total Ratings"}</p>
-                <p className="text-2xl font-bold">{ratingsData?.summary.totalRatings ?? 0}</p>
+                <p className="text-2xl font-bold">{numberFormatter.format(totalRatings)}</p>
               </div>
               <MessageSquare className="h-8 w-8 text-blue-600" />
             </div>
@@ -190,7 +209,7 @@ function RatingsContent() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">{t("ratings.metrics.average.title") || "Avg Rating"}</p>
                 <div className="flex items-center gap-2">
-                  <p className="text-2xl font-bold">{ratingsData?.summary.averageRating.toFixed(1) ?? "0.0"}</p>
+                  <p className="text-2xl font-bold">{decimalFormatter.format(averageRating)}</p>
                   <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
                 </div>
               </div>
@@ -204,7 +223,7 @@ function RatingsContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">{t("ratings.metrics.responseRate.title") || "Response Rate"}</p>
-                <p className="text-2xl font-bold">{ratingsData?.summary.responseRate.toFixed(0) ?? 0}%</p>
+                <p className="text-2xl font-bold">{`${numberFormatter.format(Math.round(responseRate))}${percentSymbol}`}</p>
               </div>
               <Users className="h-8 w-8 text-purple-600" />
             </div>
@@ -216,7 +235,7 @@ function RatingsContent() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-muted-foreground">{t("ratings.metrics.withComments.title") || "With Comments"}</p>
-                <p className="text-2xl font-bold">{ratingsData?.withComments ?? 0}</p>
+                <p className="text-2xl font-bold">{numberFormatter.format(commentsCount)}</p>
               </div>
               <MessageSquare className="h-8 w-8 text-green-600" />
             </div>
@@ -239,24 +258,24 @@ function RatingsContent() {
                   <ThumbsUp className="h-4 w-4 text-green-600" />
                   <span className="text-sm font-medium text-green-600">{t("ratings.nps.promoters") || "Promoters"}</span>
                 </div>
-                <p className="text-2xl font-bold">{ratingsData?.segments.promoters ?? 0}</p>
-                <p className="text-xs text-muted-foreground">{ratingsData?.segments.promotersPercent.toFixed(0) ?? 0}%</p>
+                <p className="text-2xl font-bold">{numberFormatter.format(promotersCount)}</p>
+                <p className="text-xs text-muted-foreground">{`${numberFormatter.format(Math.round(promotersPercent))}${percentSymbol}`}</p>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center gap-1 mb-1">
                   <Minus className="h-4 w-4 text-yellow-600" />
                   <span className="text-sm font-medium text-yellow-600">{t("ratings.nps.passives") || "Passives"}</span>
                 </div>
-                <p className="text-2xl font-bold">{ratingsData?.segments.passives ?? 0}</p>
-                <p className="text-xs text-muted-foreground">{ratingsData?.segments.passivesPercent.toFixed(0) ?? 0}%</p>
+                <p className="text-2xl font-bold">{numberFormatter.format(passivesCount)}</p>
+                <p className="text-xs text-muted-foreground">{`${numberFormatter.format(Math.round(passivesPercent))}${percentSymbol}`}</p>
               </div>
               <div className="text-center">
                 <div className="flex items-center justify-center gap-1 mb-1">
                   <ThumbsDown className="h-4 w-4 text-red-600" />
                   <span className="text-sm font-medium text-red-600">{t("ratings.nps.detractors") || "Detractors"}</span>
                 </div>
-                <p className="text-2xl font-bold">{ratingsData?.segments.detractors ?? 0}</p>
-                <p className="text-xs text-muted-foreground">{ratingsData?.segments.detractorsPercent.toFixed(0) ?? 0}%</p>
+                <p className="text-2xl font-bold">{numberFormatter.format(detractorsCount)}</p>
+                <p className="text-xs text-muted-foreground">{`${numberFormatter.format(Math.round(detractorsPercent))}${percentSymbol}`}</p>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={250}>
@@ -266,7 +285,13 @@ function RatingsContent() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  label={({ name, percent }) =>
+                    t("ratings.nps.segmentLabel", {
+                      segment: name,
+                      percent: numberFormatter.format(Math.round(percent * 100)),
+                      percentSymbol,
+                    }) || `${name}: ${numberFormatter.format(Math.round(percent * 100))}${percentSymbol}`
+                  }
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="value"
@@ -290,15 +315,17 @@ function RatingsContent() {
           <CardContent>
             <div className="space-y-3 mb-4">
               {[5, 4, 3, 2, 1].map((star) => {
-                const count = ratingsData?.distribution[star as keyof typeof ratingsData.distribution] || 0
-                const percentage = ratingsData && ratingsData.summary.totalRatings > 0 
-                  ? (count / ratingsData.summary.totalRatings) * 100 
-                  : 0
+                const count = (ratingsData?.distribution as Record<string, number> | undefined)?.[String(star)] ?? 0
+                const percentage = totalRatings > 0 ? (count / totalRatings) * 100 : 0
+                const roundedPercentage = Math.round(percentage)
                 
                 return (
                   <div key={star} className="flex items-center gap-4">
                     <div className="flex w-20 items-center justify-end gap-1">
-                      <span className="text-sm font-medium">{star}</span>
+                      <span className="text-sm font-medium">
+                        {t("ratings.distribution.starLabel", { stars: numberFormatter.format(star) }) ||
+                          numberFormatter.format(star)}
+                      </span>
                       <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
                     </div>
                     <div className="flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
@@ -308,7 +335,11 @@ function RatingsContent() {
                       />
                     </div>
                     <span className="w-24 text-sm text-muted-foreground text-right">
-                      {count} ({percentage.toFixed(0)}%)
+                      {t("ratings.distribution.entry", {
+                        count: numberFormatter.format(count),
+                        percentage: numberFormatter.format(roundedPercentage),
+                        percentSymbol,
+                      }) || `${numberFormatter.format(count)} (${numberFormatter.format(roundedPercentage)}${percentSymbol})`}
                     </span>
                   </div>
                 )
@@ -336,7 +367,7 @@ function RatingsContent() {
                 <YAxis domain={[0, 5]} />
                 <Tooltip 
                   labelFormatter={(value) => new Date(value).toLocaleDateString(locale)}
-                  formatter={(value: any) => [value.toFixed(2), t("ratings.timeline.avgRating") || "Avg Rating"]}
+                  formatter={(value: number) => [decimalFormatter.format(value), t("ratings.timeline.avgRating") || "Avg Rating"]}
                 />
                 <Line
                   type="monotone"
@@ -380,9 +411,15 @@ function RatingsContent() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="1">{t("ratings.filters.all") || "All ratings"}</SelectItem>
-                <SelectItem value="5">5 ⭐</SelectItem>
-                <SelectItem value="4">4+ ⭐</SelectItem>
-                <SelectItem value="3">3+ ⭐</SelectItem>
+                <SelectItem value="5">
+                  {t("ratings.filters.starExact", { count: numberFormatter.format(5) }) || `${numberFormatter.format(5)} ⭐`}
+                </SelectItem>
+                <SelectItem value="4">
+                  {t("ratings.filters.starAtLeast", { count: numberFormatter.format(4) }) || `${numberFormatter.format(4)}+ ⭐`}
+                </SelectItem>
+                <SelectItem value="3">
+                  {t("ratings.filters.starAtLeast", { count: numberFormatter.format(3) }) || `${numberFormatter.format(3)}+ ⭐`}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -410,7 +447,12 @@ function RatingsContent() {
                   <TableCell>
                     <div className="flex flex-col gap-1">
                         <StarRating rating={review.rating} />
-                        <span className="text-xs text-muted-foreground">{review.rating}/10</span>
+                        <span className="text-xs text-muted-foreground">
+                          {t("ratings.table.ratingOutOfTen", {
+                            rating: numberFormatter.format(review.rating),
+                            max: numberFormatter.format(10),
+                          }) || `${numberFormatter.format(review.rating)}/${numberFormatter.format(10)}`}
+                        </span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -466,4 +508,3 @@ export default function RatingsPage() {
     </AuthGuard>
   )
 }
-

@@ -1,57 +1,28 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getAuthenticatedRestaurant } from "@/lib/server-auth"
-
-const BOT_API_URL =
-  process.env.BOT_API_URL || process.env.NEXT_PUBLIC_BOT_API_URL || "https://bot.sufrah.sa/api"
-const BOT_API_TOKEN = process.env.BOT_API_TOKEN || ""
+import { db } from "@/lib/db"
 
 /**
  * GET /api/conversations/[id]/messages/db
- * Fetch messages from database (not in-memory cache)
- * This ensures message history persists across server restarts
+ * Fetch messages directly from our database for the authenticated restaurant
  */
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    if (!BOT_API_TOKEN) {
-      console.error(`[conversations/${params.id}/messages/db] Missing BOT_API_TOKEN env var`)
-      return NextResponse.json({ error: "Server misconfiguration" }, { status: 500 })
+    const restaurant = await getAuthenticatedRestaurant(request)
+    if (!restaurant) {
+      return NextResponse.json({ error: "Unauthorized", messages: [] }, { status: 401 })
     }
 
     const { searchParams } = new URL(request.url)
-    const limit = searchParams.get("limit") || "100"
-    const offset = searchParams.get("offset") || "0"
+    const limitNum = parseInt(searchParams.get("limit") || "100", 10)
 
-    // Derive restaurant from authenticated session
-    const restaurant = await getAuthenticatedRestaurant(request)
-    const restaurantId = restaurant?.id || undefined
+    // Read from prisma through our db helper
+    const rows = await db.listMessages(restaurant.id, params.id, isNaN(limitNum) ? 100 : limitNum)
 
-    const queryParams = new URLSearchParams({
-      limit,
-      offset,
-    })
-
-    const headers: HeadersInit = {
-      Authorization: `Bearer ${BOT_API_TOKEN}`,
-      "Content-Type": "application/json",
-      ...(restaurantId ? { "X-Restaurant-Id": restaurantId } : {}),
-    }
-
-    const response = await fetch(
-      `${BOT_API_URL}/db/conversations/${encodeURIComponent(params.id)}/messages?${queryParams}`,
-      { headers }
-    )
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "")
-      console.error(`Bot API error /db/conversations/${params.id}/messages`, response.status, body)
-      return NextResponse.json({ error: "Bot API request failed" }, { status: response.status })
-    }
-
-    const messages = await response.json()
-    return NextResponse.json({ messages })
+    return NextResponse.json({ messages: rows })
   } catch (error: any) {
     console.error(`[conversations/${params.id}/messages/db] Failed to fetch messages:`, error)
     return NextResponse.json(

@@ -64,7 +64,6 @@ export function ChatInterface() {
   const [showMobileMessages, setShowMobileMessages] = useState(false)
   const [togglingBot, setTogglingBot] = useState(false)
   const isInitializedRef = useRef(false)
-
   // Load messages for selected conversation
   const loadConversationMessages = async (conversationId: string) => {
     if (messages[conversationId] && messages[conversationId].length > 0) {

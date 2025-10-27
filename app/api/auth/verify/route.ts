@@ -1,32 +1,22 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/db"
 import { formatPhoneNumber } from "@/lib/auth-utils"
-import { fetchMerchantByPhoneOrEmail } from "@/lib/merchants"
 
 export async function POST(request: NextRequest) {
   try {
     const { phone, code } = await request.json()
 
-    console.log("[v0] Verify request - phone:", phone, "code:", code) // Add debug logging
+    console.log("[verify] Verify request - phone:", phone, "code:", code)
 
     if (!phone || !code) {
       return NextResponse.json({ success: false, message: "Phone number and code are required" }, { status: 400 })
     }
 
     const formattedPhone = formatPhoneNumber(phone)
-    console.log("[v0] Formatted phone for verification:", formattedPhone) // Add debug logging
-
-    // For external merchant API: if user typed without '+', send digits-only (no +) as they expect,
-    // otherwise send standard E.164. Keep E.164 internally for DB/Twilio.
-    const inputTrimmed = typeof phone === "string" ? phone.trim() : ""
-    const digitsOnly = formattedPhone.replace(/^\+/, "")
-    const usingDigitsOnly = !inputTrimmed.startsWith("+")
-    const merchantLookupPhone = usingDigitsOnly ? digitsOnly : formattedPhone
-    const merchantLookupOptions = usingDigitsOnly ? undefined : undefined
-    console.log("[v0] Merchant lookup value:", merchantLookupPhone) // Add debug logging
+    console.log("[verify] Formatted phone for verification:", formattedPhone)
 
     const user = await db.getUserByPhone(formattedPhone)
-    console.log("[v0] User found for verification:", !!user) // Add debug logging
+    console.log("[verify] User found for verification:", !!user)
 
     if (!user) {
       return NextResponse.json({ success: false, message: "User not found" }, { status: 404 })
@@ -40,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (storedCode !== code) {
-      console.log("[v0] Invalid verification code - expected:", storedCode, "received:", code)
+      console.log("[verify] Invalid verification code - expected:", storedCode, "received:", code)
       return NextResponse.json({ success: false, message: "Invalid verification code" }, { status: 400 })
     }
 
@@ -57,33 +47,9 @@ export async function POST(request: NextRequest) {
 
     const restaurant = await db.getPrimaryRestaurantByUserId(user.id)
 
-    // Fetch merchant data by phone and update user + restaurant profile (best-effort)
-    try {
-      const merchantRes = await fetchMerchantByPhoneOrEmail(merchantLookupPhone, merchantLookupOptions)
-      console.log("[v0] Merchant response:", merchantRes) // Add debug logging
-      if (merchantRes.success && merchantRes.data) {
-        const m = merchantRes.data
-        // Update user basic info if available
-        await db.updateUser(user.id, {
-          name: typeof m.name === "string" ? m.name : undefined,
-          email: typeof m.email === "string" ? m.email : undefined,
-        })
-        console.log("[v0] User updated:", merchantRes) // Add debug logging
-        if (restaurant) {
-          await db.updateRestaurant(restaurant.id, {
-            name: m.name || undefined,
-            description: m.bundleName || undefined,
-            phone: m.phoneNumber || undefined,
-            whatsappNumber: m.phoneNumber || undefined,
-            address: m.address || undefined,
-            isActive: typeof m.isActive === "boolean" ? m.isActive : undefined,
-            externalMerchantId: typeof m.id === "string" ? m.id : undefined,
-          })
-        }
-      }
-    } catch (syncErr) {
-      console.warn("[verify] Failed syncing merchant data:", syncErr)
-    }
+    // NOTE: Merchant data is now fetched during signin, not here.
+    // This ensures only registered merchants can create accounts.
+    // If needed, we can optionally re-sync merchant data here for existing users.
 
     // Log usage
     if (restaurant) {
@@ -109,7 +75,7 @@ export async function POST(request: NextRequest) {
       path: "/",
     })
 
-    console.log("[v0] Cookie set for phone:", formattedPhone) // Add debug logging
+    console.log("[verify] Cookie set for phone:", formattedPhone)
 
     return response
   } catch (error) {

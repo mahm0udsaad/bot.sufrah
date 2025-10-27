@@ -37,15 +37,16 @@ export async function fetchMerchantByPhoneOrEmail(
   emailOrPhone: string,
   options?: { preserveEncoding?: boolean }
 ): Promise<{ success: boolean; data?: MerchantData; error?: string }>{
-  const baseUrl = process.env.BASEURL || ""
-  const apiToken = process.env.APITOKEN || ""
-
+  const baseUrl = process.env.SUFRAH_MAIN_API || ""
+  const apiToken = process.env.SUFRAH_API_KEY || ""
+  console.log("baseUrl", baseUrl)
+  console.log("apiToken", apiToken)
   if (!baseUrl || !apiToken) {
     return { success: false, error: "External merchant API not configured" }
   }
 
   const url = new URL(joinUrl(baseUrl, "/api/v1/external/merchants/get-by-property"))
-
+  console.log("url", url.toString())
   if (options?.preserveEncoding) {
     url.search = `EmailOrPhone=${emailOrPhone}`
   } else {

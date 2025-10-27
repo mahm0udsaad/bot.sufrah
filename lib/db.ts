@@ -22,14 +22,24 @@ export const db = {
 
   async createUserWithRestaurant(data: {
     phone: string
+    name?: string
+    email?: string
     verification_code?: string
     verification_expires_at?: Date
+    restaurantData?: {
+      name?: string
+      description?: string
+      address?: string
+      isActive?: boolean
+      externalMerchantId?: string
+    }
   }) {
     return prisma.$transaction(async (tx: any) => {
       const user = await tx.user.create({
         data: {
           phone: data.phone,
-          name: "Restaurant Owner",
+          name: data.name ?? "Restaurant Owner",
+          email: data.email ?? null,
           verification_code: data.verification_code ?? null,
           verification_expires_at: data.verification_expires_at ?? null,
         },
@@ -38,12 +48,13 @@ export const db = {
       await tx.restaurant.create({
         data: {
           userId: user.id,
-          name: "My Restaurant",
-          description: "A new restaurant ready to serve customers",
+          name: data.restaurantData?.name ?? "My Restaurant",
+          description: data.restaurantData?.description ?? "A new restaurant ready to serve customers",
           phone: data.phone,
           whatsappNumber: data.phone,
-          address: "123 Main Street",
-          isActive: true,
+          address: data.restaurantData?.address ?? "123 Main Street",
+          isActive: data.restaurantData?.isActive ?? true,
+          externalMerchantId: data.restaurantData?.externalMerchantId ?? null,
         },
       })
 
@@ -307,7 +318,7 @@ export const db = {
         restaurantId: data.restaurantId,
         conversationId: data.conversationId,
         direction: data.direction,
-        body: data.body,
+        content: data.body,
         waSid: data.waSid ?? null,
         mediaUrl: data.mediaUrl ?? null,
         messageType: "text",

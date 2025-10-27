@@ -180,8 +180,8 @@ function normalizeConversation(data: any): Conversation {
 }
 
 function normalizeMessage(data: any): ChatMessage {
-  const rawDirection = (data.direction || data.sender_type || "OUT").toString().toUpperCase()
-  const direction: "IN" | "OUT" = rawDirection === "IN" || rawDirection === "CUSTOMER" ? "IN" : "OUT"
+  const rawDirection = (data.direction || data.sender_type || "OUT").toString().trim().toUpperCase()
+  const direction: "IN" | "OUT" = ["IN", "INBOUND", "CUSTOMER"].includes(rawDirection) ? "IN" : "OUT"
 
   return {
     id: data.id,

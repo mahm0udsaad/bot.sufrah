@@ -1,10 +1,14 @@
 # ID Usage Guide: Restaurant ID vs Bot ID (Tenant ID)
 
+> **📘 See also:** [BOT_ID_ARCHITECTURE.md](./BOT_ID_ARCHITECTURE.md) for complete implementation details
+
 ## Overview
 
 The dashboard interacts with TWO different systems:
 1. **Internal Database** (PostgreSQL) - Uses `Restaurant ID`
 2. **External Bot Server API** (bot.sufrah.sa) - Uses `Bot ID` (also called `Tenant ID`)
+
+**⚠️ CRITICAL:** Bot IDs must come from the external bot server, not be generated locally!
 
 ## Database Schema
 

@@ -29,6 +29,7 @@ const NAV_ITEMS = [
 
 const ADMIN_NAV_ITEMS = [
   { labelKey: "navigation.adminBots", href: "/admin/bots", icon: Shield },
+  { labelKey: "navigation.adminUsage", href: "/admin/usage", icon: BarChart3 },
 ]
 
 interface DashboardLayoutProps {

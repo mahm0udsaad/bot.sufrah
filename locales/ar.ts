@@ -40,6 +40,7 @@ const ar = {
     templates: "القوالب",
     settings: "الإعدادات",
     adminBots: "بوتات المشرف",
+    adminUsage: "إدارة الاستخدام",
     adminSection: "المشرف",
     searchPlaceholder: "ابحث في المحادثات...",
   },

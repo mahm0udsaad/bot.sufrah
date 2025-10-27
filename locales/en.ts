@@ -40,6 +40,7 @@ const en = {
     templates: "Templates",
     settings: "Settings",
     adminBots: "Admin Bots",
+    adminUsage: "Usage Management",
     adminSection: "Admin",
     searchPlaceholder: "Search conversations...",
   },

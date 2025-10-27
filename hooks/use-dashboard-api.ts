@@ -10,6 +10,8 @@ import type * as api from '@/lib/dashboard-api';
 import { useAuth } from '@/lib/auth';
 
 type Locale = api.Locale;
+export type TemplateCategory = api.TemplateCategory;
+export type TemplateStatus = api.TemplateStatus;
 
 // ============================================================================
 // DASHBOARD OVERVIEW HOOK
@@ -578,6 +580,8 @@ export function useTemplates(
     status?: api.TemplateStatus;
     category?: api.TemplateCategory;
     locale?: Locale;
+    limit?: number;
+    offset?: number;
   } = {}
 ) {
   const { user } = useAuth();
@@ -600,7 +604,7 @@ export function useTemplates(
       setError(null);
     }
     setLoading(false);
-  }, [tenantId, params.status, params.category, params.locale]);
+  }, [tenantId, params.status, params.category, params.locale, params.limit, params.offset]);
 
   useEffect(() => {
     if (!tenantId) {
@@ -927,3 +931,188 @@ export function useHealthCheck(pollInterval: number = 60000) {
   return { data, loading };
 }
 
+// ============================================================================
+// USAGE & QUOTA MANAGEMENT HOOKS
+// ============================================================================
+
+/**
+ * Hook for fetching usage list (admin or single restaurant)
+ */
+export function useUsageList(
+  params: {
+    limit?: number;
+    offset?: number;
+    locale?: Locale;
+  } = {},
+  useApiKey: boolean = false
+) {
+  const { user } = useAuth();
+  const [data, setData] = useState<api.UsageListResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const result = await actions.getUsageList(params, useApiKey);
+    
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setData(result.data);
+      setError(null);
+    }
+    setLoading(false);
+  }, [params.limit, params.offset, params.locale, useApiKey]);
+
+  useEffect(() => {
+    if (user) {
+      fetchData();
+    } else {
+      setLoading(false);
+    }
+  }, [user, fetchData]);
+
+  return { data, loading, error, refetch: fetchData };
+}
+
+/**
+ * Hook for fetching detailed usage for a single restaurant (admin)
+ */
+export function useUsageDetail(restaurantId: string, locale: Locale = 'en') {
+  const [data, setData] = useState<api.UsageDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!restaurantId) {
+      setLoading(false);
+      return;
+    }
+
+    const fetchData = async () => {
+      setLoading(true);
+      const result = await actions.getUsageDetail(restaurantId, locale);
+      
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setData(result.data);
+        setError(null);
+      }
+      setLoading(false);
+    };
+
+    fetchData();
+  }, [restaurantId, locale]);
+
+  return { data, loading, error };
+}
+
+/**
+ * Hook for fetching usage alerts (admin)
+ */
+export function useUsageAlerts(
+  params: {
+    threshold?: number;
+    limit?: number;
+    offset?: number;
+    locale?: Locale;
+  } = {}
+) {
+  const [data, setData] = useState<api.UsageAlertsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    const result = await actions.getUsageAlerts(params);
+    
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setData(result.data);
+      setError(null);
+    }
+    setLoading(false);
+  }, [params.threshold, params.limit, params.offset, params.locale]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return { data, loading, error, refetch: fetchData };
+}
+
+/**
+ * Hook for current restaurant's usage (PAT)
+ */
+export function useRestaurantUsage(locale: Locale = 'en') {
+  const { user } = useAuth();
+  const [data, setData] = useState<api.UsageRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const tenantId = user?.tenantId || user?.restaurant?.id || '';
+
+  const fetchData = useCallback(async () => {
+    if (!tenantId) return;
+
+    setLoading(true);
+    const result = await actions.getSingleRestaurantUsage(tenantId, locale);
+    
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setData(result.data);
+      setError(null);
+    }
+    setLoading(false);
+  }, [tenantId, locale]);
+
+  useEffect(() => {
+    if (tenantId) {
+      fetchData();
+    } else {
+      setLoading(false);
+    }
+  }, [tenantId, fetchData]);
+
+  return { data, loading, error, refetch: fetchData };
+}
+
+/**
+ * Hook for current restaurant's detailed usage (PAT)
+ */
+export function useRestaurantUsageDetails(locale: Locale = 'en') {
+  const { user } = useAuth();
+  const [data, setData] = useState<api.UsageDetailResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const tenantId = user?.tenantId || user?.restaurant?.id || '';
+
+  const fetchData = useCallback(async () => {
+    if (!tenantId) return;
+
+    setLoading(true);
+    const result = await actions.getRestaurantUsageDetails(tenantId, locale);
+    
+    if (result.error) {
+      setError(result.error);
+    } else {
+      setData(result.data);
+      setError(null);
+    }
+    setLoading(false);
+  }, [tenantId, locale]);
+
+  useEffect(() => {
+    if (tenantId) {
+      fetchData();
+    } else {
+      setLoading(false);
+    }
+  }, [tenantId, fetchData]);
+
+  return { data, loading, error, refetch: fetchData };
+}

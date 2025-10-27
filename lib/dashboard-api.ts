@@ -627,7 +627,8 @@ export type TemplateCategory =
   | 'UTILITY'
   | 'AUTHENTICATION'
   | 'ORDER_STATUS'
-  | 'ORDER_UPDATE';
+  | 'ORDER_UPDATE'
+  | (string & {});
 
 export interface Template {
   id: string;
@@ -635,9 +636,15 @@ export interface Template {
   category: TemplateCategory;
   language: string;
   status: TemplateStatus;
+  statusDisplay: string;
+  templateSid?: string | null;
+  usageCount?: number;
+  lastUsed?: string | null;
+  lastUsedRelative?: string | null;
   bodyText: string;
   footerText: string | null;
   variables: string[];
+  hasVariables?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -658,15 +665,24 @@ export async function fetchTemplates(
     status?: TemplateStatus;
     category?: TemplateCategory;
     locale?: Locale;
+    limit?: number;
+    offset?: number;
   } = {}
 ) {
   const { status, category, locale = 'en' } = params;
+  const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+  const offset = Math.max(params.offset ?? 0, 0);
 
   const query = new URLSearchParams();
+  query.append('limit', limit.toString());
+  query.append('offset', offset.toString());
   if (status) query.append('status', status);
   if (category) query.append('category', category);
 
-  return apiFetch<TemplatesList>(`/api/templates?${query}`, {
+  const queryString = query.toString();
+  const endpoint = queryString.length > 0 ? `/api/templates?${queryString}` : '/api/templates';
+
+  return apiFetch<TemplatesList>(endpoint, {
     restaurantId,
     locale,
   });
@@ -978,6 +994,234 @@ export async function checkHealth() {
   }
 }
 
+// ============================================================================
+// USAGE & QUOTA MANAGEMENT
+// ============================================================================
+
+export interface UsageAllowance {
+  dailyLimit: number;
+  dailyRemaining: number;
+  monthlyLimit: number;
+  monthlyRemaining: number;
+}
+
+export interface UsageRecord {
+  restaurantId: string;
+  restaurantName: string;
+  conversationsThisMonth: number;
+  lastConversationAt: string | null;
+  allowance: UsageAllowance;
+  adjustedBy: number;
+  usagePercent?: number;
+  isNearingQuota: boolean;
+  firstActivity: string | null;
+  lastActivity: string | null;
+  isActive: boolean;
+}
+
+export interface UsageHistory {
+  month: number;
+  year: number;
+  conversationCount: number;
+  lastConversationAt: string | null;
+}
+
+export interface UsageDetail extends UsageRecord {
+  history: UsageHistory[];
+}
+
+export interface UsageListResponse {
+  data: UsageRecord[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
+export interface UsageAlertRecord {
+  restaurantId: string;
+  restaurantName: string;
+  used: number;
+  limit: number;
+  remaining: number;
+  usagePercent: number;
+  isNearingQuota: boolean;
+  adjustedBy: number;
+}
+
+export interface UsageAlertsResponse {
+  data: UsageAlertRecord[];
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+  threshold: number;
+}
+
+export interface RenewAllowanceResponse {
+  success: boolean;
+  data: {
+    used: number;
+    limit: number;
+    effectiveLimit: number;
+    adjustedBy: number;
+    remaining: number;
+    usagePercent?: number;
+    isNearingQuota: boolean;
+  };
+}
+
+export async function fetchUsageList(
+  params: {
+    limit?: number;
+    offset?: number;
+    locale?: Locale;
+  } = {},
+  useApiKey: boolean = false
+) {
+  const { limit = 20, offset = 0, locale = 'en' } = params;
+  const query = new URLSearchParams({
+    limit: limit.toString(),
+    offset: offset.toString(),
+  });
+
+  return apiFetch<UsageListResponse>(
+    `/api/usage?${query}`,
+    { locale, useApiKey }
+  );
+}
+
+export async function fetchUsageDetail(
+  restaurantId: string,
+  locale: Locale = 'en'
+) {
+  return apiFetch<UsageDetail>(
+    `/api/usage/${restaurantId}`,
+    { locale, useApiKey: true }
+  );
+}
+
+export async function fetchUsageAlerts(
+  params: {
+    threshold?: number;
+    limit?: number;
+    offset?: number;
+    locale?: Locale;
+  } = {}
+) {
+  const { threshold = 0.9, limit = 50, offset = 0, locale = 'en' } = params;
+  const query = new URLSearchParams({
+    threshold: threshold.toString(),
+    limit: limit.toString(),
+    offset: offset.toString(),
+  });
+
+  return apiFetch<UsageAlertsResponse>(
+    `/api/usage/alerts?${query}`,
+    { locale, useApiKey: true }
+  );
+}
+
+export async function renewRestaurantAllowance(
+  restaurantId: string,
+  amount: number = 1000,
+  reason: string = 'Manual renewal'
+) {
+  return apiFetch<RenewAllowanceResponse>(
+    `/api/admin/usage/${restaurantId}/renew`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ amount, reason }),
+      useApiKey: true,
+    }
+  );
+}
+
+export interface UsageDailyBreakdown {
+  date: string;
+  conversationsStarted: number;
+  messages: number;
+}
+
+export interface UsageAdjustment {
+  id: string;
+  amount: number;
+  reason: string;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface UsageSession {
+  id: string;
+  customerPhone: string;
+  startedAt: string;
+  lastMessageAt: string;
+  messageCount: number;
+}
+
+export interface UsageQuota {
+  used: number;
+  limit: number;
+  effectiveLimit: number;
+  adjustedBy: number;
+  remaining: number;
+  usagePercent?: number;
+  isNearingQuota: boolean;
+}
+
+export interface UsageMonthly {
+  month: number;
+  year: number;
+  conversationCount: number;
+  lastConversationAt: string | null;
+}
+
+export interface UsageDetailResponse {
+  restaurantId: string;
+  restaurantName: string;
+  quota: UsageQuota;
+  monthlyUsage: UsageMonthly[];
+  firstActivity: string | null;
+  lastActivity: string | null;
+  activeSessionsCount: number;
+  dailyBreakdown: UsageDailyBreakdown[];
+  adjustments: UsageAdjustment[];
+  recentSessions: UsageSession[];
+}
+
+export async function fetchSingleRestaurantUsage(
+  restaurantId: string,
+  locale: Locale = 'en'
+) {
+  return apiFetch<UsageRecord>(
+    `/api/usage`,
+    { restaurantId, locale }
+  );
+}
+
+export async function fetchRestaurantUsageDetails(
+  restaurantId: string,
+  locale: Locale = 'en'
+) {
+  return apiFetch<UsageDetailResponse>(
+    `/api/usage/details`,
+    { restaurantId, locale }
+  );
+}
+
+export async function fetchRestaurantUsageDetailsAdmin(
+  restaurantId: string,
+  locale: Locale = 'en'
+) {
+  return apiFetch<UsageDetailResponse>(
+    `/api/usage/${restaurantId}/details`,
+    { locale, useApiKey: true }
+  );
+}
+
 // Re-export phone utilities for convenience
 export { formatPhoneForSufrah, formatPhoneForWhatsApp, normalizePhone, formatPhoneForDisplay, maskPhone } from './phone-utils';
-

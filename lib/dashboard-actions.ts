@@ -499,15 +499,24 @@ export async function getTemplates(
     status?: TemplateStatus;
     category?: TemplateCategory;
     locale?: Locale;
+    limit?: number;
+    offset?: number;
   } = {}
 ) {
   const { status, category, locale = 'en' } = params;
+  const limit = Math.min(Math.max(params.limit ?? 50, 1), 200);
+  const offset = Math.max(params.offset ?? 0, 0);
 
   const query = new URLSearchParams();
+  query.append('limit', limit.toString());
+  query.append('offset', offset.toString());
   if (status) query.append('status', status);
   if (category) query.append('category', category);
 
-  return apiFetch<TemplatesList>(`/api/templates?${query}`, {
+  const queryString = query.toString();
+  const endpoint = queryString.length > 0 ? `/api/templates?${queryString}` : '/api/templates';
+
+  return apiFetch<TemplatesList>(endpoint, {
     restaurantId,
     locale,
   });
@@ -802,6 +811,126 @@ export async function checkHealth() {
   }
 }
 
+// ============================================================================
+// USAGE & QUOTA MANAGEMENT
+// ============================================================================
+
+/**
+ * Fetch usage list (admin with API key or single restaurant with PAT)
+ */
+export async function getUsageList(
+  params: {
+    limit?: number;
+    offset?: number;
+    locale?: Locale;
+  } = {},
+  useApiKey: boolean = false
+) {
+  const { limit = 20, offset = 0, locale = 'en' } = params;
+  const query = new URLSearchParams({
+    limit: limit.toString(),
+    offset: offset.toString(),
+  });
+
+  return apiFetch<any>(
+    `/api/usage?${query}`,
+    { locale, useApiKey }
+  );
+}
+
+/**
+ * Fetch detailed usage for a single restaurant (admin only)
+ */
+export async function getUsageDetail(
+  restaurantId: string,
+  locale: Locale = 'en'
+) {
+  return apiFetch<any>(
+    `/api/usage/${restaurantId}`,
+    { locale, useApiKey: true }
+  );
+}
+
+/**
+ * Fetch restaurants nearing quota (admin only)
+ */
+export async function getUsageAlerts(
+  params: {
+    threshold?: number;
+    limit?: number;
+    offset?: number;
+    locale?: Locale;
+  } = {}
+) {
+  const { threshold = 0.9, limit = 50, offset = 0, locale = 'en' } = params;
+  const query = new URLSearchParams({
+    threshold: threshold.toString(),
+    limit: limit.toString(),
+    offset: offset.toString(),
+  });
+
+  return apiFetch<any>(
+    `/api/usage/alerts?${query}`,
+    { locale, useApiKey: true }
+  );
+}
+
+/**
+ * Renew restaurant allowance (admin only)
+ */
+export async function renewRestaurantAllowance(
+  restaurantId: string,
+  amount: number = 1000,
+  reason: string = 'Manual renewal'
+) {
+  return apiFetch<any>(
+    `/api/admin/usage/${restaurantId}/renew`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ amount, reason }),
+      useApiKey: true,
+    }
+  );
+}
+
+/**
+ * Fetch usage for current restaurant (PAT)
+ */
+export async function getSingleRestaurantUsage(
+  restaurantId: string,
+  locale: Locale = 'en'
+) {
+  return apiFetch<any>(
+    `/api/usage`,
+    { restaurantId, locale }
+  );
+}
+
+/**
+ * Fetch detailed usage for current restaurant (PAT)
+ */
+export async function getRestaurantUsageDetails(
+  restaurantId: string,
+  locale: Locale = 'en'
+) {
+  return apiFetch<any>(
+    `/api/usage/details`,
+    { restaurantId, locale }
+  );
+}
+
+/**
+ * Fetch detailed usage for a restaurant (admin)
+ */
+export async function getRestaurantUsageDetailsAdmin(
+  restaurantId: string,
+  locale: Locale = 'en'
+) {
+  return apiFetch<any>(
+    `/api/usage/${restaurantId}/details`,
+    { locale, useApiKey: true }
+  );
+}
+
 // Note: Phone utilities are not exported from here since this is a "use server" file
 // Import them directly from './phone-utils' if needed
-

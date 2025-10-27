@@ -2,19 +2,41 @@
 
 import type React from "react"
 
-import { useState, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AuthGuard } from "@/components/auth-guard"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Search, Plus, Edit, Trash2, Copy, MessageSquare, CheckCircle2, Clock, XCircle, Loader2, RefreshCw } from "lucide-react"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
+import {
+  Search,
+  Plus,
+  Edit,
+  Trash2,
+  Copy,
+  MessageSquare,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  Loader2,
+  RefreshCw,
+  Braces,
+} from "lucide-react"
 import { useTemplates, type TemplateCategory, type TemplateStatus } from "@/hooks/use-dashboard-api"
 import { useI18n } from "@/hooks/use-i18n"
 import { cn } from "@/lib/utils"
@@ -37,10 +59,15 @@ export default function TemplatesPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState<TemplateCategory | "ALL">("ALL")
   const [selectedStatus, setSelectedStatus] = useState<TemplateStatus | "ALL">("ALL")
+  const [limit, setLimit] = useState(50)
+  const [offset, setOffset] = useState(0)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<any>(null)
   const [formError, setFormError] = useState("")
   const isRtl = dir === "rtl"
+
+  const effectiveLimit = useMemo(() => Math.min(Math.max(limit, 1), 200), [limit])
+  const safeOffset = useMemo(() => Math.max(offset, 0), [offset])
 
   // Form state
   const [formData, setFormData] = useState({
@@ -64,9 +91,22 @@ export default function TemplatesPage() {
     status: selectedStatus === "ALL" ? undefined : selectedStatus,
     category: selectedCategory === "ALL" ? undefined : selectedCategory,
     locale: locale as 'en' | 'ar',
+    limit: effectiveLimit,
+    offset: safeOffset,
   })
 
   const templates = templatesData?.templates || []
+
+  const getTemplateBody = (template: any) => template?.bodyText ?? template?.body_text ?? ""
+  const getTemplateFooter = (template: any) => template?.footerText ?? template?.footer_text ?? ""
+  const formatCategoryLabel = (category: string) =>
+    category
+      ? category
+          .replace(/_/g, " ")
+          .split(" ")
+          .map((word) => (word ? word[0].toUpperCase() + word.slice(1).toLowerCase() : ""))
+          .join(" ")
+      : ""
 
   const handleCreateTemplate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -133,7 +173,14 @@ export default function TemplatesPage() {
   }
 
   const handleCopyTemplate = (template: any) => {
-    navigator.clipboard.writeText(template.bodyText)
+    const content = getTemplateBody(template)
+
+    if (!content) {
+      toast.error(t("templates.errors.copyFailed") || "Template body not available")
+      return
+    }
+
+    navigator.clipboard.writeText(content)
     toast.success(t("templates.toasts.copied") || "Template copied to clipboard")
   }
 
@@ -142,8 +189,8 @@ export default function TemplatesPage() {
     setFormData({
       name: template.name,
       category: template.category,
-      body_text: template.bodyText,
-      footer_text: template.footerText || "",
+      body_text: getTemplateBody(template),
+      footer_text: getTemplateFooter(template),
       language: template.language,
     })
   }
@@ -157,6 +204,24 @@ export default function TemplatesPage() {
       language: locale === 'ar' ? 'ar' : 'en',
     })
     setFormError("")
+  }
+
+  const handleNextPage = () => {
+    if (!canGoNext) return
+    setOffset((prev) => prev + effectiveLimit)
+  }
+
+  const handlePreviousPage = () => {
+    if (!canGoPrevious) return
+    setOffset((prev) => Math.max(0, prev - effectiveLimit))
+  }
+
+  const handlePageSizeChange = (value: string) => {
+    const parsed = Number(value)
+    if (Number.isNaN(parsed)) return
+    const clamped = Math.min(Math.max(parsed, 1), 200)
+    setLimit(clamped)
+    setOffset(0)
   }
 
   const categories: { value: TemplateCategory; label: string }[] = [
@@ -173,29 +238,104 @@ export default function TemplatesPage() {
     { value: "REJECTED", label: t("templates.status.rejected") || "Rejected" },
   ]
 
+  const dynamicCategoryOptions = useMemo(() => {
+    const known = new Set(categories.map((category) => category.value))
+    const dynamic = new Set<string>()
+
+    templates.forEach((template) => {
+      if (!known.has(template.category)) {
+        dynamic.add(template.category)
+      }
+    })
+
+    return Array.from(dynamic).map((value) => ({
+      value,
+      label: formatCategoryLabel(value),
+    }))
+  }, [categories, templates])
+
+  const categoryFilterOptions: { value: TemplateCategory | "ALL"; label: string }[] = useMemo(
+    () => [
+      { value: "ALL", label: t("templates.filters.allCategories") || "All Categories" },
+      ...categories,
+      ...dynamicCategoryOptions,
+    ],
+    [categories, dynamicCategoryOptions, t],
+  )
+
+  const statusFilterOptions: { value: TemplateStatus | "ALL"; label: string }[] = useMemo(
+    () => [
+      { value: "ALL", label: t("templates.filters.allStatuses") || "All Statuses" },
+      ...statusOptions,
+    ],
+    [statusOptions, t],
+  )
+
   const extractVariables = (text: string): string[] => {
     const matches = text.match(/\{\{([^}]+)\}\}/g)
     return matches ? matches.map((match) => match.slice(2, -2).trim()) : []
   }
 
-  const filteredTemplates = templates.filter((template) => {
+  const filteredTemplates = useMemo(() => {
     const query = searchQuery.trim().toLowerCase()
-    if (!query) return true
-    
-    return (
-      template.name.toLowerCase().includes(query) ||
-      template.bodyText.toLowerCase().includes(query)
-    )
-  })
+    if (!query) return templates
 
-  const stats = {
-    total: templates.length,
+    return templates.filter((template) => {
+      const bodyText = getTemplateBody(template).toLowerCase()
+      const templateSid = (template.templateSid || "").toLowerCase()
+
+      return (
+        template.name.toLowerCase().includes(query) ||
+        bodyText.includes(query) ||
+        templateSid.includes(query)
+      )
+    })
+  }, [templates, searchQuery])
+
+  const visibleCount = filteredTemplates.length
+
+  const pagination = templatesData?.pagination
+
+  const stats = useMemo(() => ({
+    total: pagination?.total ?? templates.length,
     approved: templates.filter((t) => t.status === "APPROVED").length,
     pending: templates.filter((t) => t.status === "PENDING").length,
     rejected: templates.filter((t) => t.status === "REJECTED").length,
-  }
+  }), [pagination, templates])
 
-  if (loading && templates.length === 0) {
+  const totalTemplatesCount = pagination?.total ?? 0
+  const totalPages = totalTemplatesCount > 0 ? Math.ceil(totalTemplatesCount / effectiveLimit) : 1
+  const currentPage = Math.floor(safeOffset / effectiveLimit) + 1
+  const canGoPrevious = safeOffset > 0
+  const canGoNext = pagination ? pagination.hasMore || safeOffset + effectiveLimit < pagination.total : false
+  const isInitialLoad = loading && templates.length === 0
+
+  useEffect(() => {
+    const total = pagination?.total
+
+    if (total === undefined || total === null) {
+      return
+    }
+
+    if (total === 0 && offset !== 0) {
+      setOffset(0)
+      return
+    }
+
+    if (total > 0 && offset >= total) {
+      const maxOffset = Math.max(0, Math.floor((total - 1) / effectiveLimit) * effectiveLimit)
+      if (offset !== maxOffset) {
+        setOffset(maxOffset)
+      }
+    }
+  }, [pagination?.total, offset, effectiveLimit])
+
+  useEffect(() => {
+    if (!error) return
+    toast.error(error, { id: "templates-fetch-error" })
+  }, [error])
+
+  if (isInitialLoad) {
     return (
       <AuthGuard>
         <DashboardLayout>
@@ -387,148 +527,258 @@ export default function TemplatesPage() {
           </div>
 
           {/* Filters */}
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search
-                className={cn(
-                  "absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground",
-                  isRtl ? "right-3" : "left-3",
-                )}
-              />
-              <Input
-                dir={dir}
-                placeholder={t("templates.filters.searchPlaceholder") || "Search templates..."}
-                className={cn(isRtl ? "pr-10 pl-3 text-right" : "pl-10")}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="relative flex-1 min-w-[220px] max-w-sm">
+                <Search
+                  className={cn(
+                    "absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground",
+                    isRtl ? "right-3" : "left-3",
+                  )}
+                />
+                <Input
+                  dir={dir}
+                  placeholder={t("templates.filters.searchPlaceholder") || "Search templates..."}
+                  className={cn(isRtl ? "pr-10 pl-3 text-right" : "pl-10")}
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                    setOffset(0)
+                  }}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-muted-foreground">
+                  {t("templates.filters.pageSize") || "Per page"}
+                </span>
+                <Select value={String(effectiveLimit)} onValueChange={handlePageSizeChange}>
+                  <SelectTrigger className="w-24" dir={dir}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[25, 50, 100, 200].map((size) => (
+                      <SelectItem key={size} value={size.toString()}>
+                        {size}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as any)}>
-              <SelectTrigger className="w-48" dir={dir}>
-                <SelectValue placeholder={t("templates.filters.categoryPlaceholder") || "All categories"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">{t("templates.filters.allCategories") || "All Categories"}</SelectItem>
-                {categories.map((category) => (
-                  <SelectItem key={category.value} value={category.value}>
-                    {category.label}
-                  </SelectItem>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-medium text-muted-foreground">
+                {t("templates.filters.categoryLabel") || "Category"}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {categoryFilterOptions.map((option) => (
+                  <Button
+                    key={option.value}
+                    size="sm"
+                    variant={selectedCategory === option.value ? "default" : "outline"}
+                    onClick={() => {
+                      if (selectedCategory === option.value) return
+                      setSelectedCategory(option.value as TemplateCategory | "ALL")
+                      setOffset(0)
+                    }}
+                  >
+                    {option.label}
+                  </Button>
                 ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedStatus} onValueChange={(value) => setSelectedStatus(value as any)}>
-              <SelectTrigger className="w-40" dir={dir}>
-                <SelectValue placeholder={t("templates.filters.statusPlaceholder") || "All statuses"} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">{t("templates.filters.allStatuses") || "All Statuses"}</SelectItem>
-                {statusOptions.map((status) => (
-                  <SelectItem key={status.value} value={status.value}>
-                    {status.label}
-                  </SelectItem>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-medium text-muted-foreground">
+                {t("templates.filters.statusLabel") || "Status"}
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {statusFilterOptions.map((option) => (
+                  <Button
+                    key={option.value}
+                    size="sm"
+                    variant={selectedStatus === option.value ? "default" : "outline"}
+                    onClick={() => {
+                      if (selectedStatus === option.value) return
+                      setSelectedStatus(option.value as TemplateStatus | "ALL")
+                      setOffset(0)
+                    }}
+                  >
+                    {option.label}
+                  </Button>
                 ))}
-              </SelectContent>
-            </Select>
+              </div>
+            </div>
           </div>
 
-          {/* Templates Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredTemplates.map((template) => {
-              const StatusIcon = statusIcons[template.status]
-              const variables = template.variables || []
+          {/* Templates Table */}
+          <div className="overflow-hidden rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("templates.table.name") || "Template"}</TableHead>
+                  <TableHead>{t("templates.table.status") || "Status"}</TableHead>
+                  <TableHead>{t("templates.table.language") || "Language"}</TableHead>
+                  <TableHead>{t("templates.table.category") || "Category"}</TableHead>
+                  <TableHead className="text-right">{t("templates.table.usage") || "Usage"}</TableHead>
+                  <TableHead>{t("templates.table.lastUsed") || "Last used"}</TableHead>
+                  <TableHead>{t("templates.table.variables") || "Variables"}</TableHead>
+                  <TableHead className="text-right">{t("templates.table.actions") || "Actions"}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredTemplates.map((template) => {
+                  const StatusIcon = statusIcons[template.status] || CheckCircle2
+                  const variables = template.variables || []
+                  const hasVariables = template.hasVariables || variables.length > 0
+                  const statusBadgeClass = statusColors[template.status] || "bg-muted text-foreground"
 
-              return (
-                <Card key={template.id} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <CardTitle className="text-lg">{template.name}</CardTitle>
-                        <Badge variant="outline" className="mt-1 capitalize">
-                          {template.category.replace(/_/g, ' ')}
-                        </Badge>
-                      </div>
-                      <Badge className={statusColors[template.status]}>
-                        <StatusIcon className={cn("h-3 w-3", isRtl ? "ml-1" : "mr-1")} />
-                        {template.status}
-                      </Badge>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      <div className="bg-muted/50 p-3 rounded-lg">
-                        <p className="text-sm line-clamp-3">{template.bodyText}</p>
-                      </div>
-
-                      {variables.length > 0 && (
-                        <div>
-                          <p className="mb-2 text-sm font-medium">{t("templates.form.variables.heading") || "Variables:"}</p>
-                          <div className="flex flex-wrap gap-1">
-                            {variables.map((variable, index) => (
-                              <Badge key={index} variant="secondary" className="text-xs">
-                                {`{{${variable}}}`}
-                              </Badge>
-                            ))}
-                          </div>
+                  return (
+                    <TableRow key={template.id}>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <span className="font-medium text-foreground">{template.name}</span>
+                          <span className="text-xs text-muted-foreground font-mono">
+                            {template.templateSid || t("templates.table.notProvisioned") || "Not provisioned"}
+                          </span>
                         </div>
-                      )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={statusBadgeClass}>
+                          <StatusIcon className={cn("h-3 w-3", isRtl ? "ml-1" : "mr-1")} />
+                          {template.statusDisplay || template.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="uppercase">{template.language}</TableCell>
+                      <TableCell>{formatCategoryLabel(template.category)}</TableCell>
+                      <TableCell className="text-right">{template.usageCount ?? 0}</TableCell>
+                      <TableCell>
+                        {template.lastUsedRelative || t("templates.table.never") || "Never"}
+                      </TableCell>
+                      <TableCell>
+                        {hasVariables ? (
+                          <Badge variant="secondary" className="gap-1 text-xs">
+                            <Braces className="h-3 w-3" />
+                            {t("templates.table.hasVariables") || "Has variables"}
+                            {variables.length > 0 && <span>({variables.length})</span>}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCopyTemplate(template)}
+                            aria-label={t("templates.actions.copy") || "Copy"}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleEditClick(template)}
+                            aria-label={t("templates.actions.edit") || "Edit"}
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteTemplate(template.id, template.name)}
+                            aria-label={t("templates.actions.delete") || "Delete"}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
 
-                      <div className="flex items-center justify-between text-sm text-muted-foreground">
-                        <span>{template.language.toUpperCase()}</span>
-                        <span>{new Date(template.updatedAt).toLocaleDateString(locale)}</span>
+                {!loading && filteredTemplates.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                      <div className="flex flex-col items-center gap-3">
+                        <MessageSquare className="h-10 w-10 text-muted-foreground" />
+                        <div>
+                          <p className="font-medium text-foreground">{t("templates.empty.title") || "No templates yet"}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {searchQuery || selectedCategory !== "ALL" || selectedStatus !== "ALL"
+                              ? t("templates.empty.searchMessage") || "Try adjusting your filters"
+                              : t("templates.empty.defaultMessage") || "Create your first template to get started"}
+                          </p>
+                        </div>
+                        {!searchQuery && selectedCategory === "ALL" && selectedStatus === "ALL" && (
+                          <Button onClick={() => setIsCreateDialogOpen(true)}>
+                            <Plus className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2")} />
+                            {t("templates.actions.create") || "Create Template"}
+                          </Button>
+                        )}
                       </div>
+                    </TableCell>
+                  </TableRow>
+                )}
 
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => handleCopyTemplate(template)}
-                          aria-label={t("templates.actions.copy") || "Copy"}
-                        >
-                          <Copy className={cn("h-3 w-3", isRtl ? "ml-1" : "mr-1")} />
-                          {t("templates.actions.copy") || "Copy"}
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={() => handleEditClick(template)}
-                          aria-label={t("templates.actions.edit") || "Edit"}
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDeleteTemplate(template.id, template.name)}
-                          aria-label={t("templates.actions.delete") || "Delete"}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
+                {loading && !isInitialLoad && (
+                  Array.from({ length: Math.min(5, effectiveLimit) }).map((_, index) => (
+                    <TableRow key={`skeleton-${index}`}>
+                      <TableCell colSpan={8}>
+                        <Skeleton className="h-9 w-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
 
-          {filteredTemplates.length === 0 && (
-            <div className="text-center py-12">
-              <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">{t("templates.empty.title") || "No templates found"}</h3>
-              <p className="text-muted-foreground mb-4">
-                {searchQuery || selectedCategory !== "ALL" || selectedStatus !== "ALL"
-                  ? t("templates.empty.searchMessage") || "Try adjusting your filters"
-                  : t("templates.empty.defaultMessage") || "Create your first template to get started"}
-              </p>
-              {!searchQuery && selectedCategory === "ALL" && selectedStatus === "ALL" && (
-                <Button onClick={() => setIsCreateDialogOpen(true)}>
-                  <Plus className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2")} />
-                  {t("templates.actions.create") || "Create Template"}
-                </Button>
-              )}
-            </div>
-          )}
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {totalTemplatesCount > 0
+                ?
+                    t("templates.table.resultsSummary", {
+                      values: {
+                        total: totalTemplatesCount,
+                        visible: visibleCount,
+                        page: currentPage,
+                        pages: totalPages,
+                      },
+                    }) || `Showing ${visibleCount} of ${totalTemplatesCount} templates`
+                : t("templates.table.noResults") || "No templates to display"}
+            </p>
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    onClick={(event) => {
+                      event.preventDefault()
+                      if (!canGoPrevious) return
+                      handlePreviousPage()
+                    }}
+                    aria-disabled={!canGoPrevious}
+                    className={!canGoPrevious ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+                <PaginationItem>
+                  <span className="px-4 text-sm font-medium text-muted-foreground">
+                    {t("templates.table.pageLabel", { values: { page: currentPage, pages: totalPages } }) || `Page ${currentPage} of ${totalPages}`}
+                  </span>
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationNext
+                    onClick={(event) => {
+                      event.preventDefault()
+                      if (!canGoNext) return
+                      handleNextPage()
+                    }}
+                    aria-disabled={!canGoNext}
+                    className={!canGoNext ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
         </div>
 
         {/* Edit Dialog */}

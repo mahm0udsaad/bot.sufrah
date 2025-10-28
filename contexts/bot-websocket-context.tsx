@@ -180,12 +180,10 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
               break
               
             case "message.created":
-            case "message.sent":
-              // Normalize message payload to internal shape
+              // Only handle message.created to avoid duplicates
+              // message.sent is redundant and causes duplicate messages
               {
-                // message.sent has structure { message: {...}, conversation: {...} }
-                // message.created has structure { data: {...} }
-                const m: any = message.type === "message.sent" ? message.message : message.data
+                const m: any = message.data
                 const normalizedType =
                   m.message_type ??
                   m.messageType ??
@@ -206,33 +204,13 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
                   template_preview: m.templatePreview ?? m.template_preview ?? undefined,
                 }
                 messageHandlers.current.forEach((handler) => handler(normalized))
-                
-                // For message.sent events, also update conversation metadata
-                if (message.type === "message.sent" && message.conversation) {
-                  const c = message.conversation
-                  const updatedConv: BotConversation = {
-                    id: c.id,
-                    customer_phone: c.customer_phone ?? c.customerPhone ?? c.customerWa ?? "",
-                    customer_name: c.customer_name ?? c.customerName ?? null,
-                    status: (c.status ?? "active").toString().toLowerCase(),
-                    last_message_at: c.lastMessageAt ?? c.last_message_at ?? new Date().toISOString(),
-                    unread_count: c.unreadCount ?? c.unread_count ?? 0,
-                    is_bot_active: c.isBotActive ?? c.is_bot_active ?? true,
-                  }
-                  setConversations((prev) => {
-                    const index = prev.findIndex((cv) => cv.id === updatedConv.id)
-                    if (index >= 0) {
-                      const updated = [...prev]
-                      updated[index] = { ...updated[index], ...updatedConv }
-                      return updated.sort(
-                        (a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime(),
-                      )
-                    }
-                    return prev
-                  })
-                  conversationHandlers.current.forEach((handler) => handler(updatedConv))
-                }
               }
+              break
+              
+            case "message.sent":
+              // Ignore message.sent to prevent duplicates
+              // We already handle the message via message.created
+              console.log("Ignoring message.sent event to prevent duplicate messages")
               break
               
             case "conversation.updated":

@@ -65,6 +65,7 @@ export function ChatInterface() {
   const [showMobileMessages, setShowMobileMessages] = useState(false)
   const [togglingBot, setTogglingBot] = useState(false)
   const isInitializedRef = useRef(false)
+  const processedMessageIds = useRef<Set<string>>(new Set())
   // Load messages for selected conversation
   const loadConversationMessages = async (conversationId: string) => {
     if (messages[conversationId] && messages[conversationId].length > 0) {
@@ -74,6 +75,10 @@ export function ChatInterface() {
     setLoadingMessages(true)
     try {
       const fetchedMessages = await fetchMessages(conversationId)
+      
+      // Mark all loaded messages as processed to prevent WebSocket duplicates
+      fetchedMessages.forEach(msg => processedMessageIds.current.add(msg.id))
+      
       setMessages((prev) => ({
         ...prev,
         [conversationId]: fetchedMessages.sort((a, b) => 
@@ -107,6 +112,9 @@ export function ChatInterface() {
     try {
       const sentMessage = await sendMessage(selectedConversationId, text)
       
+      // Mark this message as processed to prevent WebSocket duplicate
+      processedMessageIds.current.add(sentMessage.id)
+      
       // Immediately add message to UI (optimistic update)
       setMessages((prev) => {
         const convMessages = prev[selectedConversationId] || []
@@ -125,7 +133,7 @@ export function ChatInterface() {
         }
       })
       
-      // WebSocket message.sent event will be deduplicated by the subscription handler
+      // WebSocket message.created event will be ignored for this message ID
     } catch (err) {
       console.error("Failed to send message:", err)
       toast.error("فشل إرسال الرسالة")
@@ -141,6 +149,9 @@ export function ChatInterface() {
     try {
       const sentMessage = await sendMedia(selectedConversationId, file, caption)
       
+      // Mark this message as processed to prevent WebSocket duplicate
+      processedMessageIds.current.add(sentMessage.id)
+      
       // Immediately add message to UI (optimistic update)
       setMessages((prev) => {
         const convMessages = prev[selectedConversationId] || []
@@ -159,7 +170,7 @@ export function ChatInterface() {
         }
       })
       
-      // WebSocket message.sent event will be deduplicated by the subscription handler
+      // WebSocket message.created event will be ignored for this message ID
     } catch (err) {
       console.error("Failed to send media:", err)
       throw err // Re-throw so MessageThread can handle it
@@ -197,6 +208,12 @@ export function ChatInterface() {
   // Subscribe to real-time message updates
   useEffect(() => {
     const unsubscribe = subscribeToMessages((message) => {
+      // Skip if we already processed this message (via optimistic update)
+      if (processedMessageIds.current.has(message.id)) {
+        console.log(`Skipping duplicate message ${message.id} from WebSocket (already processed via optimistic update)`)
+        return
+      }
+      
       setMessages((prev) => {
         const convMessages = prev[message.conversation_id] || []
         const exists = convMessages.some((m) => m.id === message.id)

@@ -2,11 +2,20 @@
 
 import { useState, useEffect, useRef } from "react"
 import { TemplateMessage } from "./TemplateMessage"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { Send, Image, FileText, Mic, MapPin, Loader2, Phone, User, Paperclip, X } from "lucide-react"
+import { 
+  Send, 
+  Image as ImageIcon, 
+  FileText, 
+  Mic, 
+  MapPin, 
+  Loader2, 
+  Paperclip, 
+  X,
+  Smile,
+  Plus
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 import { format, isToday, isYesterday } from "date-fns"
 import { ar } from "date-fns/locale"
@@ -28,8 +37,8 @@ interface BotMessage {
   from_phone: string
   to_phone: string
   message_type: "text" | "image" | "document" | "audio" | "template" | string
-  content: string // Now formatted by backend (e.g., "📋 new_order_notification", "🖼️ Image")
-  original_content?: string // Raw content (e.g., "HX4b088aa4afe1428c50a6b12026317ece")
+  content: string
+  original_content?: string
   media_url: string | null
   timestamp: string
   is_from_customer: boolean
@@ -65,30 +74,52 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const [shouldAutoScroll, setShouldAutoScroll] = useState(true)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [animatingMessageIds, setAnimatingMessageIds] = useState<Set<string>>(new Set())
+  const previousMessageIdsRef = useRef<Set<string>>(new Set())
+
+  // Detect new messages and trigger animations
+  useEffect(() => {
+    const currentMessageIds = new Set(messages.map(m => m.id))
+    const newMessageIds = new Set<string>()
+    
+    currentMessageIds.forEach(id => {
+      if (!previousMessageIdsRef.current.has(id)) {
+        newMessageIds.add(id)
+      }
+    })
+    
+    if (newMessageIds.size > 0) {
+      setAnimatingMessageIds(newMessageIds)
+      
+      // Remove animation class after animation completes
+      const timer = setTimeout(() => {
+        setAnimatingMessageIds(new Set())
+      }, 500)
+      
+      return () => clearTimeout(timer)
+    }
+    
+    previousMessageIdsRef.current = currentMessageIds
+  }, [messages])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (shouldAutoScroll && messagesEndRef.current) {
+    if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
     }
-  }, [messages, shouldAutoScroll])
+  }, [messages])
 
-  // Reset scroll when conversation changes
+  // Reset when conversation changes
   useEffect(() => {
-    setShouldAutoScroll(true)
+    previousMessageIdsRef.current = new Set()
+    setAnimatingMessageIds(new Set())
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "auto" })
     }, 100)
   }, [conversation.id])
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLDivElement
-    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100
-    setShouldAutoScroll(isNearBottom)
-  }
 
   const handleSend = async () => {
     if (uploading) return
@@ -114,6 +145,11 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
     if (!messageText.trim() || sending) return
     onSendMessage(messageText)
     setMessageText("")
+    
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto"
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -152,7 +188,6 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
     }
 
     setSelectedFile(file)
-    // Clear the input so the same file can be selected again
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
@@ -176,25 +211,22 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
   const getMessageIcon = (type: string) => {
     switch (type) {
       case "image":
-        return <Image className="h-4 w-4" />
+        return <ImageIcon className="h-3 w-3" />
       case "document":
-        return <FileText className="h-4 w-4" />
+        return <FileText className="h-3 w-3" />
       case "audio":
-        return <Mic className="h-4 w-4" />
+        return <Mic className="h-3 w-3" />
       default:
         return null
     }
   }
 
   const renderMessageContent = (message: BotMessage) => {
-    // Render WhatsApp template preview with full details if available
+    // Render WhatsApp template preview
     if (message.message_type === "template" && message.template_preview) {
       return (
         <div className="space-y-2">
-          {/* Show formatted template name */}
           <div className="font-medium text-sm">{message.content}</div>
-          
-          {/* Show template preview component for interactive display */}
           <TemplateMessage
             template={{
               sid: message.template_preview.sid,
@@ -221,7 +253,7 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
       )
     }
 
-    // Handle media messages - content now includes formatted type like "🖼️ Image" or caption
+    // Handle media messages
     if (message.media_url) {
       if (message.message_type === "image") {
         return (
@@ -229,19 +261,18 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
             <img
               src={message.media_url}
               alt={message.content}
-              className="rounded-lg max-w-sm w-full h-auto"
+              className="rounded-xl max-w-sm w-full h-auto shadow-md"
             />
-            {/* Content is now pre-formatted (caption or "🖼️ Image") */}
-            <p className="text-sm">{message.content}</p>
+            {message.content && <p className="text-sm">{message.content}</p>}
           </div>
         )
       } else if (message.message_type === "video") {
         return (
           <div className="space-y-2">
-            <video controls className="rounded-lg max-w-sm w-full h-auto">
+            <video controls className="rounded-xl max-w-sm w-full h-auto shadow-md">
               <source src={message.media_url} />
             </video>
-            <p className="text-sm">{message.content}</p>
+            {message.content && <p className="text-sm">{message.content}</p>}
           </div>
         )
       } else if (message.message_type === "audio") {
@@ -250,7 +281,7 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
             <audio controls className="w-full">
               <source src={message.media_url} />
             </audio>
-            <p className="text-sm">{message.content}</p>
+            {message.content && <p className="text-sm">{message.content}</p>}
           </div>
         )
       } else {
@@ -265,115 +296,148 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
               {getMessageIcon(message.message_type)}
               <span>عرض الملف</span>
             </a>
-            <p className="text-sm">{message.content}</p>
+            {message.content && <p className="text-sm">{message.content}</p>}
           </div>
         )
       }
     }
 
-    // For text messages, just display the content
-    return <p className="whitespace-pre-wrap">{message.content}</p>
+    // Text messages
+    return <p className="whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>
+  }
+
+  // Group messages by date
+  const groupedMessages = messages.reduce((groups, message) => {
+    const date = format(new Date(message.timestamp), "yyyy-MM-dd")
+    if (!groups[date]) {
+      groups[date] = []
+    }
+    groups[date].push(message)
+    return groups
+  }, {} as Record<string, BotMessage[]>)
+
+  const formatDateHeader = (dateStr: string) => {
+    const date = new Date(dateStr)
+    if (isToday(date)) return "اليوم"
+    if (isYesterday(date)) return "أمس"
+    return format(date, "dd MMMM yyyy", { locale: ar })
   }
 
   return (
-    <div className="flex flex-col h-full" dir="rtl">
-      {/* Header - Hidden on mobile (we have a separate mobile header in ChatInterface) */}
-      <div className="p-3 md:p-4 border-b hidden lg:block">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-            <User className="h-5 w-5 text-primary" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="font-semibold text-base md:text-lg truncate">
-              {conversation.customer_name || conversation.customer_phone}
-            </h2>
-            <div className="flex items-center gap-2 text-xs md:text-sm text-muted-foreground">
-              <Phone className="h-3 w-3" />
-              <span dir="ltr">{conversation.customer_phone}</span>
-            </div>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <Badge variant={conversation.status === "active" ? "default" : "secondary"} className="text-xs">
-              {conversation.status === "active" ? "نشط" : "مغلق"}
-            </Badge>
-            {conversation.is_bot_active && (
-              <Badge variant="outline" className="text-xs">
-                البوت نشط
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
-      
-      {/* Mobile Header - More compact */}
-      <div className="p-3 border-b lg:hidden bg-muted/30">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-            <User className="h-4 w-4 text-primary" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Phone className="h-3 w-3" />
-              <span dir="ltr">{conversation.customer_phone}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <Badge variant={conversation.status === "active" ? "default" : "secondary"} className="text-xs px-1.5 py-0">
-              {conversation.status === "active" ? "نشط" : "مغلق"}
-            </Badge>
-            {conversation.is_bot_active && (
-              <Badge variant="outline" className="text-xs px-1.5 py-0">
-                بوت
-              </Badge>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div className="overflow-y-scroll flex-1 p-3 md:p-4" onScrollCapture={handleScroll}>
+    <div className="flex flex-col h-full w-full bg-[#efeae2]" dir="rtl">
+      {/* Messages Area - with proper padding and scroll */}
+      <div 
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto px-4 md:px-8 lg:px-16 py-4 min-h-0"
+        style={{
+          backgroundImage: `url("/bg.png")`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundAttachment: 'fixed',
+        }}
+      >
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <div className="bg-white rounded-2xl shadow-lg px-6 py-4 flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+              <span className="text-gray-700 font-medium">جاري تحميل الرسائل...</span>
+            </div>
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-center text-muted-foreground">
-            <div>
-              <p>لا توجد رسائل</p>
-              <p className="text-sm mt-2">ابدأ المحادثة بإرسال رسالة</p>
+          <div className="flex items-center justify-center h-full">
+            <div className="bg-white rounded-2xl shadow-lg px-8 py-6 text-center max-w-md">
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center mx-auto mb-4">
+                <Send className="w-8 h-8 text-indigo-600" />
+              </div>
+              <h3 className="text-gray-900 font-semibold text-lg mb-2">ابدأ المحادثة</h3>
+              <p className="text-gray-500 text-sm">أرسل رسالتك الأولى لبدء التواصل مع العميل</p>
             </div>
           </div>
         ) : (
-          <div className="overflow-y-scroll space-y-2 md:space-y-3">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={cn(
-                  "flex",
-                  message.is_from_customer ? "justify-start" : "justify-end"
-                )}
-              >
-                <div
-                  className={cn(
-                    "max-w-[85%] md:max-w-[75%] lg:max-w-[70%] rounded-lg p-2.5 md:p-3",
-                    message.is_from_customer
-                      ? "bg-secondary text-secondary-foreground"
-                      : "bg-primary text-primary-foreground"
-                  )}
-                >
-                  {renderMessageContent(message)}
-                  <div
-                    className={cn(
-                      "text-[10px] md:text-xs mt-1 flex items-center gap-1",
-                      message.is_from_customer
-                        ? "text-secondary-foreground/70"
-                        : "text-primary-foreground/70"
-                    )}
-                  >
-                    {getMessageIcon(message.message_type)}
-                    <span>{formatMessageTime(message.timestamp)}</span>
+          <div className="space-y-6">
+            {Object.entries(groupedMessages).map(([date, msgs]) => (
+              <div key={date} className="space-y-3">
+                {/* Date separator */}
+                <div className="flex items-center justify-center py-2">
+                  <div className="bg-white/90 backdrop-blur-sm shadow-sm px-4 py-1.5 rounded-full">
+                    <span className="text-xs font-medium text-gray-600">{formatDateHeader(date)}</span>
                   </div>
                 </div>
+
+                {/* Messages */}
+                {msgs.map((message, idx) => {
+                  const isCustomer = message.is_from_customer
+                  const showAvatar = idx === 0 || msgs[idx - 1].is_from_customer !== isCustomer
+                  const isAnimating = animatingMessageIds.has(message.id)
+
+                  return (
+                    <div
+                      key={message.id}
+                      className={cn(
+                        "flex gap-2 items-end",
+                        isCustomer ? "justify-start" : "justify-end",
+                        isAnimating && (isCustomer ? "animate-slide-in-left" : "animate-slide-in-right")
+                      )}
+                    >
+                      {/* Customer avatar placeholder */}
+                      {isCustomer && (
+                        <div className={cn(
+                          "w-8 h-8 flex-shrink-0",
+                          !showAvatar && "opacity-0"
+                        )}>
+                          {showAvatar && (
+                            <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                              <span className="text-xs font-semibold text-gray-700">
+                                {conversation.customer_name?.charAt(0) || "؟"}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Message bubble */}
+                      <div
+                        className={cn(
+                          "max-w-[75%] md:max-w-[65%] rounded-xl px-3 py-2 shadow-md",
+                          isCustomer
+                            ? "bg-white text-gray-900 rounded-br-sm"
+                            : "bg-gradient-to-br from-indigo-500 to-indigo-600 text-white rounded-bl-sm"
+                        )}
+                      >
+                        {renderMessageContent(message)}
+                        <div
+                          className={cn(
+                            "text-[10px] mt-1 flex items-center gap-1 justify-end",
+                            isCustomer ? "text-gray-500" : "text-white/70"
+                          )}
+                        >
+                          <span>{formatMessageTime(message.timestamp)}</span>
+                          {getMessageIcon(message.message_type)}
+                          {!isCustomer && (
+                            <svg width="16" height="11" viewBox="0 0 16 11" className="inline ml-1">
+                              <path fill="currentColor" d="M11.071.653a.75.75 0 0 0-1.06 1.06l3.182 3.183H.75a.75.75 0 0 0 0 1.5h12.443l-3.182 3.182a.75.75 0 1 0 1.06 1.06l4.5-4.5a.75.75 0 0 0 0-1.06l-4.5-4.5z"/>
+                            </svg>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Agent avatar placeholder */}
+                      {!isCustomer && (
+                        <div className={cn(
+                          "w-8 h-8 flex-shrink-0",
+                          !showAvatar && "opacity-0"
+                        )}>
+                          {showAvatar && (
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shadow-md">
+                              <span className="text-xs font-semibold text-white">S</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             ))}
             <div ref={messagesEndRef} />
@@ -381,91 +445,114 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
         )}
       </div>
 
-      {/* Input */}
-      <div className="p-2 md:p-3 lg:p-4 border-t bg-background">
-        {/* File Preview */}
-        {selectedFile && (
-          <div className="mb-2 p-2 md:p-3 bg-muted rounded-lg flex items-center justify-between">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              {selectedFile.type.startsWith("image/") ? (
-                <Image className="h-4 w-4 md:h-5 md:w-5 text-primary flex-shrink-0" />
-              ) : (
-                <FileText className="h-4 w-4 md:h-5 md:w-5 text-primary flex-shrink-0" />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-xs md:text-sm font-medium truncate">{selectedFile.name}</p>
-                <p className="text-[10px] md:text-xs text-muted-foreground">
-                  {(selectedFile.size / 1024).toFixed(1)} KB
-                </p>
+      {/* Fixed Input Area at bottom */}
+      <div className="flex-shrink-0 bg-[#f0f2f5] px-4 py-3 border-t border-gray-200">
+        <div className="max-w-5xl mx-auto">
+          {/* File Preview */}
+          {selectedFile && (
+            <div className="mb-3 bg-white rounded-xl p-3 shadow-sm border border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="w-12 h-12 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                  {selectedFile.type.startsWith("image/") ? (
+                    <ImageIcon className="h-6 w-6 text-indigo-600" />
+                  ) : (
+                    <FileText className="h-6 w-6 text-indigo-600" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{selectedFile.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {(selectedFile.size / 1024).toFixed(1)} KB
+                  </p>
+                </div>
               </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={clearSelectedFile}
+                disabled={uploading}
+                className="flex-shrink-0 h-8 w-8 text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
+          )}
+
+          {/* Input Row */}
+          <div className="flex gap-2 items-end">
+            {/* Attach button */}
             <Button
               variant="ghost"
               size="icon"
-              onClick={clearSelectedFile}
-              disabled={uploading}
-              className="flex-shrink-0 h-7 w-7 md:h-9 md:w-9"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending || uploading}
+              className="h-11 w-11 rounded-full bg-white hover:bg-gray-100 shadow-sm flex-shrink-0"
             >
-              <X className="h-3 w-3 md:h-4 md:w-4" />
+              <Plus className="h-5 w-5 text-gray-600" />
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.pdf,.doc,.docx,.txt"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+
+            {/* Text input */}
+            <div className="flex-1 bg-white rounded-full shadow-sm flex items-end overflow-hidden">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 flex-shrink-0 rounded-full"
+              >
+                <Smile className="h-5 w-5 text-gray-500" />
+              </Button>
+              
+              <Textarea
+                ref={textareaRef}
+                value={messageText}
+                onChange={(e) => {
+                  setMessageText(e.target.value)
+                  // Auto-resize
+                  e.target.style.height = "auto"
+                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px"
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder={selectedFile ? "أضف تعليقاً..." : "اكتب رسالة..."}
+                className="resize-none border-none focus-visible:ring-0 focus-visible:ring-offset-0 min-h-[44px] max-h-[120px] py-3 px-0 shadow-none bg-transparent"
+                disabled={sending || uploading}
+                rows={1}
+              />
+            </div>
+
+            {/* Send button */}
+            <Button
+              onClick={handleSend}
+              disabled={(!messageText.trim() && !selectedFile) || sending || uploading}
+              size="icon"
+              className={cn(
+                "h-11 w-11 rounded-full shadow-lg flex-shrink-0 transition-all",
+                (!messageText.trim() && !selectedFile)
+                  ? "bg-gray-300 hover:bg-gray-400"
+                  : "bg-gradient-to-br from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800"
+              )}
+            >
+              {(sending || uploading) ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Send className="h-5 w-5" />
+              )}
             </Button>
           </div>
-        )}
 
-        <div className="flex gap-1.5 md:gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={sending || uploading}
-            title="إرفاق ملف"
-            className="h-10 w-10 md:h-12 md:w-12 flex-shrink-0"
-          >
-            <Paperclip className="h-4 w-4 md:h-5 md:w-5" />
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,.pdf,.doc,.docx,.txt"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
-          
-          <Textarea
-            value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={selectedFile ? "تعليق اختياري..." : "اكتب رسالتك..."}
-            className="resize-none min-h-[40px] md:min-h-[48px] max-h-[100px] md:max-h-[120px] text-sm md:text-base"
-            disabled={sending || uploading}
-          />
-          
-          <Button
-            onClick={handleSend}
-            disabled={(!messageText.trim() && !selectedFile) || sending || uploading}
-            size="icon"
-            className="h-10 w-10 md:h-12 md:w-12 flex-shrink-0"
-          >
-            {(sending || uploading) ? (
-              <Loader2 className="h-4 w-4 md:h-5 md:w-5 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4 md:h-5 md:w-5" />
-            )}
-          </Button>
-        </div>
-        
-        <p className="text-[10px] md:text-xs text-muted-foreground mt-1.5 md:mt-2 hidden md:block">
-          {selectedFile 
-            ? `جاهز للإرسال: ${selectedFile.name}`
-            : "اضغط Enter للإرسال، Shift+Enter لسطر جديد"}
-        </p>
-        
-        {onSendMedia && (
-          <p className="text-[10px] md:text-xs text-muted-foreground mt-1 hidden md:block">
-            يمكنك إرفاق صور أو مستندات (حتى 16 ميجابايت)
+          {/* Helper text */}
+          <p className="text-xs text-gray-500 mt-2 text-center hidden md:block">
+            {selectedFile 
+              ? `جاهز للإرسال • ${selectedFile.name}`
+              : "Enter للإرسال • Shift+Enter لسطر جديد"}
           </p>
-        )}
+        </div>
       </div>
     </div>
   )
 }
-

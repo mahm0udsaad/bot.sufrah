@@ -112,6 +112,32 @@ interface BotWebSocketContextValue {
 
 const BotWebSocketContext = createContext<BotWebSocketContextValue | null>(null)
 
+/**
+ * Deduplicate conversations by phone number
+ * If multiple conversations exist for the same phone, keep only the most recent one
+ */
+function deduplicateConversationsByPhone(conversations: BotConversation[]): BotConversation[] {
+  const phoneMap = new Map<string, BotConversation>()
+  
+  // Sort by last_message_at descending (most recent first)
+  const sorted = [...conversations].sort(
+    (a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+  )
+  
+  // Keep only the first (most recent) conversation for each phone number
+  for (const conv of sorted) {
+    const phone = conv.customer_phone?.trim()
+    if (phone && !phoneMap.has(phone)) {
+      phoneMap.set(phone, conv)
+    }
+  }
+  
+  // Return deduplicated list, sorted by most recent
+  return Array.from(phoneMap.values()).sort(
+    (a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime()
+  )
+}
+
 export function BotWebSocketProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle")
   const [error, setError] = useState<string | null>(null)
@@ -204,6 +230,23 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
                   template_preview: m.templatePreview ?? m.template_preview ?? undefined,
                 }
                 messageHandlers.current.forEach((handler) => handler(normalized))
+                
+                // Update conversation metadata to keep the list fresh
+                setConversations((prev) => {
+                  const index = prev.findIndex((cv) => cv.id === normalized.conversation_id)
+                  if (index >= 0) {
+                    const updated = [...prev]
+                    updated[index] = {
+                      ...updated[index],
+                      last_message_at: normalized.timestamp,
+                    }
+                    // Re-sort by most recent message
+                    return updated.sort(
+                      (a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime(),
+                    )
+                  }
+                  return prev
+                })
               }
               break
               
@@ -227,17 +270,15 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
                 }
                 setConversations((prev) => {
                   const index = prev.findIndex((cv) => cv.id === updatedConv.id)
+                  let updated: BotConversation[]
                   if (index >= 0) {
-                    const updated = [...prev]
+                    updated = [...prev]
                     updated[index] = { ...updated[index], ...updatedConv }
-                    return updated.sort(
-                      (a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime(),
-                    )
                   } else {
-                    return [updatedConv, ...prev].sort(
-                      (a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime(),
-                    )
+                    updated = [updatedConv, ...prev]
                   }
+                  // Deduplicate and sort
+                  return deduplicateConversationsByPhone(updated)
                 })
                 conversationHandlers.current.forEach((handler) => handler(updatedConv))
               }
@@ -383,8 +424,9 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
         unread_count: c.unread_count ?? c.unreadCount ?? 0,
         is_bot_active: c.is_bot_active ?? c.isBotActive ?? true,
       }))
-      setConversations(normalizedFallback)
-      return normalizedFallback
+      const deduplicated = deduplicateConversationsByPhone(normalizedFallback)
+      setConversations(deduplicated)
+      return deduplicated
     }
     const payload = await res.json()
     const list: any[] = payload.conversations || payload || []
@@ -397,8 +439,9 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
       unread_count: c.unread_count ?? c.unreadCount ?? 0,
       is_bot_active: c.is_bot_active ?? c.isBotActive ?? true,
     }))
-    setConversations(normalized)
-    return normalized
+    const deduplicated = deduplicateConversationsByPhone(normalized)
+    setConversations(deduplicated)
+    return deduplicated
   }
 
   const fetchMessages = async (conversationId: string): Promise<BotMessage[]> => {

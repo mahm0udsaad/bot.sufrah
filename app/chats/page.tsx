@@ -11,7 +11,7 @@ export default function ChatsPage() {
     <AuthGuard>
       <DashboardLayout>
         <BotWebSocketProvider>
-          <div className="h-[100dvh] lg:h-[calc(100vh-4rem)] p-2 md:p-4 lg:p-6">
+          <div className="h-full w-full overflow-hidden">
             <ChatInterface />
           </div>
           <Toaster />

@@ -2,9 +2,9 @@
 
 import type React from "react"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { usePathname } from "next/navigation"
-import { Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X, Bot, ScrollText, Shield, Star } from "lucide-react"
+import { Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X, Bot, ScrollText, Shield, Star, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { SignOutButton } from "@/components/sign-out-button"
@@ -22,9 +22,7 @@ const NAV_ITEMS = [
   { labelKey: "navigation.ratings", href: "/ratings", icon: Star },
   { labelKey: "navigation.catalog", href: "/catalog", icon: Store },
   { labelKey: "navigation.botManagement", href: "/bot-management", icon: Bot },
-  { labelKey: "navigation.logs", href: "/logs", icon: ScrollText },
   { labelKey: "navigation.usage", href: "/usage", icon: BarChart3 },
-  { labelKey: "navigation.settings", href: "/settings", icon: Settings },
 ]
 
 const ADMIN_NAV_ITEMS = [
@@ -38,11 +36,30 @@ interface DashboardLayoutProps {
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false
+    try {
+      return localStorage.getItem("sidebarCollapsed") === "true"
+    } catch {
+      return false
+    }
+  })
   const { user } = useAuth()
   const { t, dir } = useI18n()
   const restaurantName = user?.restaurant?.name || t("common.brand.defaultName")
   const pathname = usePathname()
   const isRtl = dir === "rtl"
+  
+  useEffect(() => {
+    try {
+      localStorage.setItem("sidebarCollapsed", String(sidebarCollapsed))
+    } catch {
+      // ignore
+    }
+  }, [sidebarCollapsed])
+  
+  // Check if current page needs full height (no padding)
+  const isFullHeightPage = pathname === "/chats"
   
   // Check if user is admin - adjust this to include your admin users
   const isAdmin = true // Temporarily allow all logged-in users for testing
@@ -56,17 +73,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           pathname === item.href ||
           (item.href !== "/" && pathname?.startsWith(`${item.href}/`)) ||
           (item.href === "/" && pathname === item.href)
-        return { ...item, isActive, label: t(item.labelKey) }
-      }),
-    [pathname, t],
-  )
-
-  const adminNavigation = useMemo(
-    () =>
-      ADMIN_NAV_ITEMS.map((item) => {
-        const isActive =
-          pathname === item.href ||
-          (item.href !== "/" && pathname?.startsWith(`${item.href}/`))
         return { ...item, isActive, label: t(item.labelKey) }
       }),
     [pathname, t],
@@ -123,21 +129,23 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
       {/* Desktop sidebar */}
       <div
         className={cn(
-          "hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:w-64 lg:flex-col",
+          "hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:flex-col transition-[width] duration-300",
+          sidebarCollapsed ? "lg:w-20" : "lg:w-64",
           isRtl ? "lg:right-0" : "lg:left-0",
         )}
       >
         <div
           className={cn(
-            "flex grow flex-col gap-y-5 overflow-y-auto bg-sidebar px-6 py-4",
+            "flex grow flex-col gap-y-5 overflow-y-auto bg-sidebar py-4",
+            sidebarCollapsed ? "px-2" : "px-6",
             isRtl ? "border-l border-sidebar-border" : "border-r border-sidebar-border",
           )}
         >
-            <div className="flex h-16 shrink-0 items-center gap-2">
+            <div className={cn("flex h-16 shrink-0 items-center gap-2", sidebarCollapsed && "justify-center")}>
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
               <span className="text-primary-foreground font-bold text-sm">S</span>
             </div>
-              <span className="font-semibold text-sidebar-foreground">{restaurantName}</span>
+              <span className={cn("font-semibold text-sidebar-foreground", sidebarCollapsed && "hidden")}>{restaurantName}</span>
           </div>
           <nav className="flex flex-1 flex-col">
             <ul role="list" className="flex flex-1 flex-col gap-y-1">
@@ -145,54 +153,42 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 <li key={item.href}>
                   <a
                     href={item.href}
+                    title={item.label}
                     className={cn(
                       "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                      sidebarCollapsed && "justify-center",
                       item.isActive
                         ? "bg-sidebar-primary text-sidebar-primary-foreground"
                         : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                     )}
                   >
                     <item.icon className="h-4 w-4 shrink-0" />
-                    {item.label}
+                    <span className={cn(sidebarCollapsed && "hidden")}>{item.label}</span>
                   </a>
                 </li>
               ))}
               
-              {isAdmin && (
+              {isAdmin && !sidebarCollapsed && (
                 <>
                   <li className="my-3 border-t border-sidebar-border pt-3">
                     <div className="px-3 py-1 text-xs font-semibold text-sidebar-foreground/60 uppercase">
                       {t("navigation.adminSection")}
                     </div>
                   </li>
-                  {adminNavigation.map((item) => (
-                    <li key={item.href}>
-                      <a
-                        href={item.href}
-                        className={cn(
-                          "flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                          item.isActive
-                            ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                            : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                        )}
-                      >
-                        <item.icon className="h-4 w-4 shrink-0" />
-                        {item.label}
-                      </a>
-                    </li>
-                  ))}
                 </>
               )}
             </ul>
           </nav>
           <div className="mt-auto border-t border-sidebar-border pt-4">
-            <SignOutButton variant="ghost" size="sm" className="w-full justify-start" />
+            {!sidebarCollapsed && (
+              <SignOutButton variant="ghost" size="sm" className="w-full justify-start" />
+            )}
           </div>
         </div>
       </div>
 
       {/* Main content */}
-      <div className={cn(isRtl ? "lg:pr-64" : "lg:pl-64")}> 
+      <div className={cn(isRtl ? (sidebarCollapsed ? "lg:pr-20" : "lg:pr-64") : (sidebarCollapsed ? "lg:pl-20" : "lg:pl-64"))}> 
         {/* Top bar */}
         <div
           className={cn(
@@ -202,6 +198,27 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         >
           <Button variant="ghost" size="sm" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
             <Menu className="h-5 w-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="hidden lg:inline-flex"
+            aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={() => setSidebarCollapsed((v) => !v)}
+          >
+            {isRtl ? (
+              sidebarCollapsed ? (
+                <ChevronLeft className="h-5 w-5" />
+              ) : (
+                <ChevronRight className="h-5 w-5" />
+              )
+            ) : (
+              sidebarCollapsed ? (
+                <ChevronRight className="h-5 w-5" />
+              ) : (
+                <ChevronLeft className="h-5 w-5" />
+              )
+            )}
           </Button>
 
           <div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
@@ -234,8 +251,18 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         </div>
 
         {/* Page content */}
-        <main className="py-6">
-          <div className="px-4 sm:px-6 lg:px-8">{children}</div>
+        <main className={cn(
+          isFullHeightPage 
+            ? "h-[calc(100vh-4rem)]" 
+            : "py-6"
+        )}>
+          <div className={cn(
+            isFullHeightPage 
+              ? "h-full" 
+              : "px-4 sm:px-6 lg:px-8"
+          )}>
+            {children}
+          </div>
         </main>
       </div>
     </div>

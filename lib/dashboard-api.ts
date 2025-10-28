@@ -502,31 +502,54 @@ export async function fetchRatingTimeline(
 // ============================================================================
 
 export type NotificationType =
-  | 'new_order'
+  | 'order_created'
+  | 'conversation_started'
+  | 'welcome_broadcast'
+  | 'new_order'  // Kept for backwards compatibility
   | 'failed_send'
   | 'quota_warning'
   | 'template_expiring'
   | 'sla_breach'
   | 'webhook_error';
 
-export type NotificationSeverity = 'info' | 'warning' | 'error';
+export type NotificationStatus = 'read' | 'unread';
+
+export interface NotificationMetadata {
+  orderId?: string;
+  orderReference?: string;
+  totalCents?: number;
+  currency?: string;
+  conversationId?: string;
+  customerName?: string;
+  customerPhone?: string;
+  delivered?: number;
+  skipped?: number;
+  failed?: number;
+  [key: string]: any;
+}
 
 export interface Notification {
   id: string;
   type: NotificationType;
-  severity: NotificationSeverity;
   title: string;
-  message: string;
-  data?: any;
-  read: boolean;
+  body: string;
   createdAt: string;
-  createdAtRelative: string;
+  status: NotificationStatus;
+  metadata?: NotificationMetadata;
+  // Backwards compatibility
+  message?: string;
+  severity?: 'info' | 'warning' | 'error';
+  data?: any;
+  read?: boolean;
+  createdAtRelative?: string;
 }
 
 export interface NotificationsList {
   notifications: Notification[];
+  nextCursor: string | null;
   unreadCount: number;
-  totalCount: number;
+  // Backwards compatibility
+  totalCount?: number;
 }
 
 export async function fetchNotifications(
@@ -535,6 +558,7 @@ export async function fetchNotifications(
   locale: Locale = 'en'
 ) {
   const query = new URLSearchParams();
+  query.append('tenantId', restaurantId);
   if (includeRead) query.append('include_read', 'true');
 
   return apiFetch<NotificationsList>(`/api/notifications?${query}`, {
@@ -547,7 +571,7 @@ export async function markNotificationRead(
   notificationId: string,
   restaurantId: string
 ) {
-  return apiFetch<{ success: boolean }>(`/api/notifications/${notificationId}`, {
+  return apiFetch<{ success: boolean }>(`/api/notifications/${notificationId}?tenantId=${encodeURIComponent(restaurantId)}`, {
     method: 'PATCH',
     body: JSON.stringify({ read: true }),
     restaurantId,

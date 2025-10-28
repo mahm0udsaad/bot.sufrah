@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 interface RealtimeEvent {
   type: string
   payload: any
+  data?: any
   channel?: string
 }
 
@@ -13,6 +14,7 @@ type MessageHandler = (payload: any) => void
 type SubscriptionMap = {
   message: Set<MessageHandler>
   order: Set<MessageHandler>
+  notification: Set<MessageHandler>
 }
 
 interface RealtimeContextValue {
@@ -21,21 +23,21 @@ interface RealtimeContextValue {
   error: string | null
   subscribeToMessages: (handler: MessageHandler) => () => void
   subscribeToOrders: (handler: MessageHandler) => () => void
+  subscribeToNotifications: (handler: MessageHandler) => () => void
 }
 
 const RealtimeContext = createContext<RealtimeContextValue | null>(null)
 
-const DEFAULT_WS_URL = "ws://localhost:4000"
+// Use bot service WebSocket - no authentication required
+const BOT_WS_URL = process.env.BOT_WS_URL || "wss://bot.sufrah.sa/ws"
 
 export function RealtimeProvider({ children }: { children: ReactNode }) {
   const [restaurantId, setRestaurantId] = useState<string | null>(null)
   const [status, setStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle")
   const [error, setError] = useState<string | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
-  const subscriptions = useRef<SubscriptionMap>({ message: new Set(), order: new Set() })
+  const subscriptions = useRef<SubscriptionMap>({ message: new Set(), order: new Set(), notification: new Set() })
   const retryAttemptRef = useRef(0)
-  const tokenRef = useRef<string | null>(null)
-  const wsUrlRef = useRef<string>(DEFAULT_WS_URL)
 
   useEffect(() => {
     let cancelled = false
@@ -45,33 +47,27 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         setStatus("connecting")
         setError(null)
 
-        const tokenRes = await fetch("/api/realtime/token", { method: "POST" })
-        if (!tokenRes.ok) {
-          throw new Error("Failed to fetch realtime token")
-        }
-
-        const tokenPayload = await tokenRes.json()
-
-        if (!tokenPayload.success) {
-          throw new Error(tokenPayload.message || "Realtime token request failed")
+        // Get user info to set restaurantId for context
+        // This is just for context tracking, not for authentication
+        try {
+          const userRes = await fetch("/api/auth/session")
+          if (userRes.ok) {
+            const userData = await userRes.json()
+            const tenantId = userData.user?.tenantId || userData.user?.restaurant?.id
+            if (tenantId && !cancelled) {
+              setRestaurantId(tenantId)
+            }
+          }
+        } catch (err) {
+          console.warn("Could not fetch user session for realtime context:", err)
         }
 
         if (cancelled) {
           return
         }
 
-        tokenRef.current = tokenPayload.token as string
-        wsUrlRef.current = tokenPayload.wsUrl || DEFAULT_WS_URL
-        setRestaurantId(tokenPayload.restaurantId as string)
-
-        if (!wsUrlRef.current) {
-          throw new Error("Missing realtime WebSocket URL. Set NEXT_PUBLIC_REALTIME_WS_URL or REALTIME_WS_URL")
-        }
-
-        const url = new URL(wsUrlRef.current)
-        url.searchParams.set("token", tokenRef.current)
-
-        const ws = new WebSocket(url.toString())
+        // Connect to bot service WebSocket - no authentication required
+        const ws = new WebSocket(BOT_WS_URL)
         socketRef.current = ws
 
         ws.onopen = () => {
@@ -81,35 +77,28 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           retryAttemptRef.current = 0
           setStatus("connected")
           setError(null)
-
-          if (tokenPayload.restaurantId) {
-            const channels = [
-              `ws:restaurant:${tokenPayload.restaurantId}:messages`,
-              `ws:restaurant:${tokenPayload.restaurantId}:orders`,
-            ]
-            ws.send(
-              JSON.stringify({
-                action: "subscribe",
-                channels,
-              }),
-            )
-          }
+          console.log("Connected to bot WebSocket:", BOT_WS_URL)
         }
 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data) as RealtimeEvent
-            const eventType = data.type || data.payload?.type
+            const eventType = data.type
             if (!eventType) {
               return
             }
 
+            // Bot service emits events with { type: "event.name", data: {...} }
             if (eventType.startsWith("message")) {
-              subscriptions.current.message.forEach((handler) => handler(data.payload ?? data))
+              subscriptions.current.message.forEach((handler) => handler(data))
             }
 
             if (eventType.startsWith("order")) {
-              subscriptions.current.order.forEach((handler) => handler(data.payload ?? data))
+              subscriptions.current.order.forEach((handler) => handler(data))
+            }
+
+            if (eventType.startsWith("notification")) {
+              subscriptions.current.notification.forEach((handler) => handler(data))
             }
           } catch (err) {
             console.error("Failed to process realtime message", err)
@@ -179,6 +168,13 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const subscribeToNotifications = (handler: MessageHandler) => {
+    subscriptions.current.notification.add(handler)
+    return () => {
+      subscriptions.current.notification.delete(handler)
+    }
+  }
+
   return (
     <RealtimeContext.Provider
       value={{
@@ -187,6 +183,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         error,
         subscribeToMessages,
         subscribeToOrders,
+        subscribeToNotifications,
       }}
     >
       {children}
@@ -199,5 +196,14 @@ export function useRealtime() {
   if (!context) {
     throw new Error("useRealtime must be used within a RealtimeProvider")
   }
+  return context
+}
+
+/**
+ * Safe version of useRealtime that returns null if provider is not available
+ * Use this in components that can work with or without real-time updates
+ */
+export function useSafeRealtime() {
+  const context = useContext(RealtimeContext)
   return context
 }

@@ -212,7 +212,7 @@ ADMIN_PASSWORD=your_secure_password_here
 
 # Public (Browser accessible)
 NEXT_PUBLIC_BOT_URL=https://bot.sufrah.sa
-NEXT_PUBLIC_BOT_WS_URL=wss://bot.sufrah.sa/ws
+BOT_WS_URL=wss://bot.sufrah.sa/ws
 NEXT_PUBLIC_BOT_API_URL=https://bot.sufrah.sa/api
 ```
 

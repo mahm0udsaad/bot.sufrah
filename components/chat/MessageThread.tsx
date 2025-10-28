@@ -27,8 +27,9 @@ interface BotMessage {
   conversation_id: string
   from_phone: string
   to_phone: string
-  message_type: "text" | "image" | "document" | "audio" | string
-  content: string
+  message_type: "text" | "image" | "document" | "audio" | "template" | string
+  content: string // Now formatted by backend (e.g., "📋 new_order_notification", "🖼️ Image")
+  original_content?: string // Raw content (e.g., "HX4b088aa4afe1428c50a6b12026317ece")
   media_url: string | null
   timestamp: string
   is_from_customer: boolean
@@ -186,21 +187,27 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
   }
 
   const renderMessageContent = (message: BotMessage) => {
-    // Render WhatsApp template preview
+    // Render WhatsApp template preview with full details if available
     if (message.message_type === "template" && message.template_preview) {
       return (
-        <TemplateMessage
-          template={{
-            sid: message.template_preview.sid,
-            friendlyName: message.template_preview.friendlyName,
-            language: message.template_preview.language,
-            body: message.template_preview.body,
-            contentType: message.template_preview.contentType,
-            buttons: message.template_preview.buttons || [],
-          }}
-          createdAt={message.timestamp}
-          direction={message.is_from_customer ? "in" : "out"}
-        />
+        <div className="space-y-2">
+          {/* Show formatted template name */}
+          <div className="font-medium text-sm">{message.content}</div>
+          
+          {/* Show template preview component for interactive display */}
+          <TemplateMessage
+            template={{
+              sid: message.template_preview.sid,
+              friendlyName: message.template_preview.friendlyName,
+              language: message.template_preview.language,
+              body: message.template_preview.body,
+              contentType: message.template_preview.contentType,
+              buttons: message.template_preview.buttons || [],
+            }}
+            createdAt={message.timestamp}
+            direction={message.is_from_customer ? "in" : "out"}
+          />
+        </div>
       )
     }
 
@@ -214,17 +221,18 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
       )
     }
 
-    // Handle media messages
+    // Handle media messages - content now includes formatted type like "🖼️ Image" or caption
     if (message.media_url) {
       if (message.message_type === "image") {
         return (
           <div className="space-y-2">
             <img
               src={message.media_url}
-              alt="رسالة صورة"
+              alt={message.content}
               className="rounded-lg max-w-sm w-full h-auto"
             />
-            {message.content && <p>{message.content}</p>}
+            {/* Content is now pre-formatted (caption or "🖼️ Image") */}
+            <p className="text-sm">{message.content}</p>
           </div>
         )
       } else if (message.message_type === "video") {
@@ -233,7 +241,7 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
             <video controls className="rounded-lg max-w-sm w-full h-auto">
               <source src={message.media_url} />
             </video>
-            {message.content && <p>{message.content}</p>}
+            <p className="text-sm">{message.content}</p>
           </div>
         )
       } else if (message.message_type === "audio") {
@@ -242,7 +250,7 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
             <audio controls className="w-full">
               <source src={message.media_url} />
             </audio>
-            {message.content && <p>{message.content}</p>}
+            <p className="text-sm">{message.content}</p>
           </div>
         )
       } else {
@@ -257,12 +265,13 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
               {getMessageIcon(message.message_type)}
               <span>عرض الملف</span>
             </a>
-            {message.content && <p>{message.content}</p>}
+            <p className="text-sm">{message.content}</p>
           </div>
         )
       }
     }
 
+    // For text messages, just display the content
     return <p className="whitespace-pre-wrap">{message.content}</p>
   }
 

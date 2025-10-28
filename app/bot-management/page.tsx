@@ -22,7 +22,9 @@ import {
   CreditCard, 
   MessageSquare,
   Loader2,
-  RefreshCw
+  RefreshCw,
+  Radio,
+  Send
 } from "lucide-react"
 import { toast } from "sonner"
 import { useAuth } from "@/lib/auth"
@@ -84,6 +86,7 @@ function BotManagementContent() {
   const [bot, setBot] = useState<RestaurantBot | null>(null)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(false)
+  const [broadcasting, setBroadcasting] = useState(false)
 
   const fetchBotData = async () => {
     try {
@@ -167,6 +170,38 @@ function BotManagementContent() {
       toast.error(t("botManagement.toasts.limitsFailed"))
     } finally {
       setUpdating(false)
+    }
+  }
+
+  const handleWelcomeBroadcast = async (force: boolean = false) => {
+    if (!bot) return
+
+    try {
+      setBroadcasting(true)
+      const response = await fetch("/api/notifications/welcome-broadcast", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to trigger welcome broadcast")
+      }
+
+      const data = await response.json()
+      if (data.success && data.data) {
+        const { delivered, skipped, failed } = data.data
+        toast.success(
+          t("botManagement.welcomeBroadcast.success", {
+            values: { delivered, skipped, failed }
+          }) || `Broadcast sent: ${delivered} delivered, ${skipped} skipped, ${failed} failed`
+        )
+      }
+    } catch (error) {
+      console.error("Failed to trigger welcome broadcast:", error)
+      toast.error(t("botManagement.welcomeBroadcast.failed") || "Failed to trigger welcome broadcast")
+    } finally {
+      setBroadcasting(false)
     }
   }
 
@@ -332,6 +367,76 @@ function BotManagementContent() {
         </CardContent>
       </Card>
 
+      {/* Welcome Broadcast */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Radio className="h-5 w-5" />
+            {t("botManagement.welcomeBroadcast.title") || "Welcome Broadcast"}
+          </CardTitle>
+          <CardDescription>
+            {t("botManagement.welcomeBroadcast.description") || "Send a welcome message to all customers who have interacted with your bot"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Alert>
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              {t("botManagement.welcomeBroadcast.warning") || "This will send a welcome message to customers. Use with caution."}
+            </AlertDescription>
+          </Alert>
+          
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button
+              onClick={() => handleWelcomeBroadcast(false)}
+              disabled={broadcasting || updating || bot.status !== "ACTIVE"}
+              variant="default"
+              className="flex-1"
+            >
+              {broadcasting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t("botManagement.welcomeBroadcast.sending") || "Sending..."}
+                </>
+              ) : (
+                <>
+                  <Send className="h-4 w-4 mr-2" />
+                  {t("botManagement.welcomeBroadcast.send") || "Send Welcome Message"}
+                </>
+              )}
+            </Button>
+            
+            <Button
+              onClick={() => handleWelcomeBroadcast(true)}
+              disabled={broadcasting || updating || bot.status !== "ACTIVE"}
+              variant="outline"
+              className="flex-1"
+            >
+              {broadcasting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t("botManagement.welcomeBroadcast.sending") || "Sending..."}
+                </>
+              ) : (
+                <>
+                  <Radio className="h-4 w-4 mr-2" />
+                  {t("botManagement.welcomeBroadcast.sendForce") || "Force Send to All"}
+                </>
+              )}
+            </Button>
+          </div>
+          
+          <div className="text-xs text-muted-foreground space-y-1">
+            <p>
+              • {t("botManagement.welcomeBroadcast.hint1") || "Regular send: Only sends to customers who haven't received a welcome message"}
+            </p>
+            <p>
+              • {t("botManagement.welcomeBroadcast.hint2") || "Force send: Sends to all customers regardless of previous messages"}
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Contact & Payment Info */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
@@ -378,40 +483,6 @@ function BotManagementContent() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Twilio Configuration (Read-only) */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t("botManagement.twilio.title")}</CardTitle>
-          <CardDescription>{t("botManagement.twilio.description")}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-2 text-sm">
-            <div>
-              <Label className="text-muted-foreground">{t("botManagement.twilio.accountSid")}</Label>
-              <p className="font-mono text-xs mt-1">{bot.accountSid}</p>
-            </div>
-            {bot.subaccountSid && (
-              <div>
-                <Label className="text-muted-foreground">{t("botManagement.twilio.subaccountSid")}</Label>
-                <p className="font-mono text-xs mt-1">{bot.subaccountSid}</p>
-              </div>
-            )}
-            {bot.senderSid && (
-              <div>
-                <Label className="text-muted-foreground">{t("botManagement.twilio.senderSid")}</Label>
-                <p className="font-mono text-xs mt-1">{bot.senderSid}</p>
-              </div>
-            )}
-            {bot.verificationSid && (
-              <div>
-                <Label className="text-muted-foreground">{t("botManagement.twilio.verificationSid")}</Label>
-                <p className="font-mono text-xs mt-1">{bot.verificationSid}</p>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Refresh Button */}
       <div className="flex justify-end">

@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { Bell, Package, MessageSquare, AlertTriangle, Info, Check, Loader2 } from "lucide-react"
+import { Bell, Package, MessageSquare, AlertTriangle, Info, Check, Loader2, Radio } from "lucide-react"
 import { useAuth } from "@/lib/auth"
+import { useNotifications } from "@/hooks/use-dashboard-api"
+import { useSafeRealtime } from "@/contexts/realtime-context"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
@@ -11,22 +13,16 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/hooks/use-i18n"
 import { toast } from "sonner"
+import type { Notification as ApiNotification } from "@/lib/dashboard-api"
 
-interface Notification {
-  id: string
-  type: "order" | "message" | "alert" | "info"
-  title: string
-  message: string
-  isRead: boolean
-  link?: string
-  createdAt: string
-}
+type NotificationIconType = "order" | "message" | "alert" | "info" | "broadcast"
 
 const NOTIFICATION_ICONS = {
   order: Package,
   message: MessageSquare,
   alert: AlertTriangle,
   info: Info,
+  broadcast: Radio,
 }
 
 const NOTIFICATION_COLORS = {
@@ -34,102 +30,129 @@ const NOTIFICATION_COLORS = {
   message: "text-green-600 bg-green-100 dark:bg-green-900 dark:text-green-200",
   alert: "text-amber-600 bg-amber-100 dark:bg-amber-900 dark:text-amber-200",
   info: "text-purple-600 bg-purple-100 dark:bg-purple-900 dark:text-purple-200",
+  broadcast: "text-indigo-600 bg-indigo-100 dark:bg-indigo-900 dark:text-indigo-200",
 }
 
 export function NotificationsSheet() {
   const router = useRouter()
-  const { t, dir } = useI18n()
+  const { t, dir, locale } = useI18n()
   const { user } = useAuth()
+  const realtime = useSafeRealtime()
   const [open, setOpen] = useState(false)
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [loading, setLoading] = useState(false)
   const [markingRead, setMarkingRead] = useState(false)
 
   const isRtl = dir === "rtl"
-  const unreadCount = notifications.filter((n) => !n.isRead).length
-  const tenantId = user?.tenantId || user?.restaurant?.id
 
-  // Fetch notifications
-  const fetchNotifications = async () => {
-    if (!tenantId) return
+  // Use shared hook that calls external backend via server actions
+  const { 
+    notifications, 
+    unreadCount, 
+    loading, 
+    markMultipleAsRead, 
+    refetch, 
+    addNotification 
+  } = useNotifications(20, 30000, locale as 'en' | 'ar')
+
+  // Subscribe to real-time notifications (if available)
+  useEffect(() => {
+    if (!realtime?.subscribeToNotifications) {
+      // RealtimeProvider not available - notifications will still work via polling
+      return
+    }
+
+    const unsubscribe = realtime.subscribeToNotifications((payload: any) => {
+      if (payload.type === "notification.created" && payload.data) {
+        const newNotification: ApiNotification = payload.data
+        addNotification(newNotification)
+        
+        // Show toast for new notifications
+        toast.info(newNotification.title, {
+          description: newNotification.body,
+          duration: 5000,
+        })
+      }
+    })
     
-    try {
-      setLoading(true)
-      const response = await fetch(`/api/notifications?tenantId=${tenantId}`, {
-        cache: "no-store",
-      })
+    return unsubscribe
+  }, [realtime, addNotification])
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch notifications")
-      }
-
-      const data = await response.json()
-      if (data.success && data.data?.notifications) {
-        setNotifications(data.data.notifications)
-      }
-    } catch (error) {
-      console.error("Failed to load notifications:", error)
-      toast.error(t("notifications.error.fetch") || "Failed to load notifications")
-    } finally {
-      setLoading(false)
+  const toUiType = (type: string): NotificationIconType => {
+    switch (type) {
+      case "order_created":
+      case "new_order":
+        return "order"
+      case "conversation_started":
+        return "message"
+      case "welcome_broadcast":
+        return "broadcast"
+      case "failed_send":
+      case "quota_warning":
+      case "sla_breach":
+      case "webhook_error":
+        return "alert"
+      case "template_expiring":
+        return "info"
+      default:
+        return "info"
     }
   }
 
-  // Mark notifications as read
-  const markAsRead = async (notificationIds: string[]) => {
+  const getNotificationLink = (notification: ApiNotification): string | undefined => {
+    const metadata = notification.metadata
+    if (!metadata) return undefined
+
+    // Deep-link based on notification type and metadata
+    if (metadata.conversationId) {
+      return `/chats?conversation=${metadata.conversationId}`
+    }
+    if (metadata.orderId) {
+      return `/orders?order=${metadata.orderId}`
+    }
+    
+    return undefined
+  }
+
+  // Mark all as read
+  const markAllAsRead = async () => {
+    const unreadIds = notifications.filter((n) => n.status === "unread").map((n) => n.id)
+    if (unreadIds.length === 0) return
+    
     try {
       setMarkingRead(true)
-      const response = await fetch("/api/notifications/read", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notificationIds }),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to mark as read")
-      }
-
-      // Update local state
-      setNotifications((prev) =>
-        prev.map((n) =>
-          notificationIds.includes(n.id) ? { ...n, isRead: true } : n
-        )
-      )
+      await markMultipleAsRead(unreadIds)
     } catch (error) {
-      console.error("Failed to mark as read:", error)
-      toast.error(t("notifications.error.markRead") || "Failed to mark as read")
+      console.error("Failed to mark all as read:", error)
+      toast.error(t("notifications.error.markRead") || "Failed to mark notifications as read")
     } finally {
       setMarkingRead(false)
     }
   }
 
-  // Mark all as read
-  const markAllAsRead = async () => {
-    const unreadIds = notifications.filter((n) => !n.isRead).map((n) => n.id)
-    if (unreadIds.length === 0) return
-    await markAsRead(unreadIds)
-  }
-
   // Handle notification click
-  const handleNotificationClick = async (notification: Notification) => {
+  const handleNotificationClick = async (notification: ApiNotification) => {
     // Mark as read if unread
-    if (!notification.isRead) {
-      await markAsRead([notification.id])
+    if (notification.status === "unread") {
+      try {
+        await markMultipleAsRead([notification.id])
+      } catch (error) {
+        console.error("Failed to mark as read:", error)
+      }
     }
 
-    // Navigate if link provided
-    if (notification.link) {
+    // Navigate if link available
+    const link = getNotificationLink(notification)
+    if (link) {
       setOpen(false)
-      router.push(notification.link)
+      router.push(link)
     }
   }
 
   // Fetch on open
   useEffect(() => {
     if (open) {
-      fetchNotifications()
+      refetch()
     }
-  }, [open])
+  }, [open, refetch])
 
   // Format relative time
   const formatRelativeTime = (timestamp: string) => {
@@ -210,8 +233,9 @@ export function NotificationsSheet() {
           ) : (
             <div className="space-y-2">
               {notifications.map((notification) => {
-                const Icon = NOTIFICATION_ICONS[notification.type]
-                const colorClass = NOTIFICATION_COLORS[notification.type]
+                const uiType = toUiType(notification.type)
+                const Icon = NOTIFICATION_ICONS[uiType]
+                const colorClass = NOTIFICATION_COLORS[uiType]
 
                 return (
                   <button
@@ -219,7 +243,7 @@ export function NotificationsSheet() {
                     onClick={() => handleNotificationClick(notification)}
                     className={cn(
                       "w-full text-left p-4 rounded-lg border transition-colors hover:bg-muted/50",
-                      !notification.isRead && "bg-muted/30 border-primary/20"
+                      notification.status === "unread" && "bg-muted/30 border-primary/20"
                     )}
                   >
                     <div className="flex gap-3">
@@ -239,12 +263,12 @@ export function NotificationsSheet() {
                           <h4 className="text-sm font-semibold truncate">
                             {notification.title}
                           </h4>
-                          {!notification.isRead && (
+                          {notification.status === "unread" && (
                             <div className="flex-shrink-0 h-2 w-2 rounded-full bg-primary" />
                           )}
                         </div>
                         <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                          {notification.message}
+                          {notification.body}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {formatRelativeTime(notification.createdAt)}

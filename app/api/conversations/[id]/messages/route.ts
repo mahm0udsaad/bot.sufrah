@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { cookies } from "next/headers"
-import { db } from "@/lib/db"
+import { db, normalizePhone } from "@/lib/db"
 
 const PAT = process.env.BOT_API_TOKEN
 
@@ -80,16 +80,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const restaurantId = await resolveRestaurantId(request)
-    const { id } = await params
+    const { id: conversationIdOrPhone } = await params
 
     if (!restaurantId) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
-    const { content, sender_type, message_type, template_id } = await request.json()
+    const { content, sender_type, message_type } = await request.json()
 
     if (!content || !sender_type) {
       return NextResponse.json({ success: false, message: "Content and sender_type are required" }, { status: 400 })
+    }
+
+    // Only handle outbound messages (from agent to customer) via bot API
+    if (sender_type !== "agent" && sender_type !== "restaurant") {
+      return NextResponse.json({ success: false, message: "Invalid sender_type. Use 'agent' for outbound messages." }, { status: 400 })
     }
 
     // Verify restaurant owns this conversation
@@ -98,25 +103,76 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
     }
 
-    const conversation = await db.getConversation(restaurant.id, id)
+    // Try to resolve conversation - might be ID or phone number
+    let conversation = await db.getConversation(restaurant.id, conversationIdOrPhone)
+    
+    // If not found by ID, try as phone number
+    if (!conversation) {
+      const normalizedPhone = normalizePhone(conversationIdOrPhone)
+      const convByPhone = await db.findOrCreateConversation(restaurant.id, normalizedPhone)
+      conversation = convByPhone
+    }
+    
     if (!conversation) {
       return NextResponse.json({ success: false, message: "Conversation not found" }, { status: 404 })
     }
+    
+    const conversationId = conversation.id
 
-    const direction = sender_type === "customer" ? "IN" : "OUT"
+    // Get bot configuration to find botId
+    const bot = await db.getPrimaryRestaurantByUserId(restaurant.userId).then(r => r?.bots)
+    const botId = bot?.id
 
-    const message = await db.createMessage({
-      conversationId: id,
-      restaurantId: restaurant.id,
-      direction,
-      body: content,
-      mediaUrl: message_type === "media" ? content : undefined,
+    if (!botId) {
+      return NextResponse.json({ success: false, message: "Bot not configured for this restaurant" }, { status: 400 })
+    }
+
+    // Forward to bot API
+    const BOT_API_URL = process.env.BOT_API_URL || process.env.NEXT_PUBLIC_BOT_API_URL
+    if (!BOT_API_URL) {
+      return NextResponse.json({ success: false, message: "Bot API not configured" }, { status: 500 })
+    }
+
+    const PAT = process.env.BOT_API_TOKEN
+    // BOT_API_URL already includes /api, so just append the path
+    const botApiUrl = `${BOT_API_URL.replace(/\/$/, "")}/conversations/${encodeURIComponent(conversationId)}/messages?tenantId=${encodeURIComponent(botId)}`
+
+    const botHeaders: HeadersInit = { "Content-Type": "application/json" }
+    if (PAT && restaurantId) {
+      botHeaders["Authorization"] = `Bearer ${PAT}`
+      botHeaders["X-Restaurant-Id"] = restaurantId
+    }
+
+    console.log(`[dashboard] Forwarding message to bot API: ${botApiUrl}`)
+
+    const botResponse = await fetch(botApiUrl, {
+      method: "POST",
+      headers: botHeaders,
+      body: JSON.stringify({
+        content,
+        messageType: message_type || "text",
+      }),
     })
 
-    // Log usage
-    await db.logUsage(restaurant.id, "message_sent", { messageId: message.id })
+    if (!botResponse.ok) {
+      const errorText = await botResponse.text()
+      console.error(`[dashboard] Bot API error (${botResponse.status}):`, errorText)
+      return NextResponse.json(
+        { success: false, message: "Failed to send message via bot API", details: errorText },
+        { status: botResponse.status }
+      )
+    }
 
-    return NextResponse.json({ success: true, message })
+    const botResult = await botResponse.json()
+
+    // Log usage
+    await db.logUsage(restaurant.id, "message_sent", { 
+      conversationId,
+      messageId: botResult.message?.id,
+      via: "bot_api" 
+    })
+
+    return NextResponse.json({ success: true, message: botResult.message || botResult })
   } catch (error) {
     console.error("Send message error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })

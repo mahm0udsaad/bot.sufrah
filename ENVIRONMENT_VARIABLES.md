@@ -28,6 +28,17 @@ These variables configure the connection to your bot server backend.
   - Development: `http://localhost:3000`
   - Staging: `https://staging.bot.sufrah.sa`
 
+#### `BOT_WS_URL`
+- **Description**: WebSocket URL for real-time updates from bot server
+- **Required**: No
+- **Default**: `wss://bot.sufrah.sa/ws`
+- **Example Values**:
+  - Production: `wss://bot.sufrah.sa/ws`
+  - Development: `ws://localhost:4000/ws`
+  - Staging: `wss://staging.bot.sufrah.sa/ws`
+- **Note**: Unauthenticated WebSocket connection for receiving real-time events (notifications, messages, orders)
+- **Used For**: Real-time notification updates, live order tracking, instant message delivery
+
 #### `NEXT_PUBLIC_DASHBOARD_PAT`
 - **Description**: Personal Access Token for restaurant owner authentication
 - **Required**: Yes
@@ -99,11 +110,33 @@ TWILIO_PHONE_NUMBER=your-twilio-phone-number
 
 - **Required**: Only if using Twilio for WhatsApp messaging
 
+#### Bot API Configuration
+
+```env
+BOT_API_URL=https://bot.sufrah.sa/api
+BOT_API_TOKEN=your-personal-access-token
+NEXT_PUBLIC_BOT_API_URL=https://bot.sufrah.sa
+```
+
+- **BOT_API_URL**: Base URL of the bot server API (server-side only)
+  - **Required**: Yes (for sending messages via bot API)
+  - **Example**: `https://bot.sufrah.sa/api` or `http://localhost:3001/api` for development
+  - **Important**: Must include `/api` suffix. The dashboard appends paths like `/conversations/:id/messages`
+  
+- **BOT_API_TOKEN**: Personal Access Token for bot API authentication
+  - **Required**: Yes (for server-side bot API calls)
+  - **Purpose**: Authenticates dashboard backend with bot server
+  - **Security**: Keep this secret! Never expose in client-side code
+  - **Get From**: Contact your bot server administrator
+  
+- **NEXT_PUBLIC_BOT_API_URL**: Bot API URL for client-side calls (optional)
+  - **Required**: No (fallback to NEXT_PUBLIC_API_URL)
+  - **Use Case**: If bot API is on different domain than main API
+
 #### WhatsApp Send API
 
 ```env
 WHATSAPP_SEND_TOKEN=your-secure-whatsapp-send-token
-BOT_API_URL=https://bot.sufrah.sa
 ```
 
 - **Required**: Yes (for sending verification codes via WhatsApp)
@@ -204,6 +237,7 @@ BOT_API_URL=https://bot.sufrah.sa
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:3000
+BOT_WS_URL=ws://localhost:4000/ws
 NEXT_PUBLIC_DASHBOARD_PAT=dev-pat-token
 NEXT_PUBLIC_RESTAURANT_ID=test-restaurant-1
 NEXT_PUBLIC_DEBUG=true
@@ -216,6 +250,7 @@ DATABASE_URL="file:./dev.db"
 
 ```env
 NEXT_PUBLIC_API_URL=https://bot.sufrah.sa
+BOT_WS_URL=wss://bot.sufrah.sa/ws
 NEXT_PUBLIC_DASHBOARD_PAT=prod-pat-XXXXXXXXXX
 NEXT_PUBLIC_RESTAURANT_ID=your-real-restaurant-id
 NEXT_PUBLIC_DEBUG=false
@@ -230,6 +265,7 @@ DATABASE_URL="postgresql://user:password@db.example.com:5432/sufrah_prod"
 
 ```env
 NEXT_PUBLIC_API_URL=https://staging.bot.sufrah.sa
+BOT_WS_URL=wss://staging.bot.sufrah.sa/ws
 NEXT_PUBLIC_DASHBOARD_PAT=staging-pat-XXXXXXXXXX
 NEXT_PUBLIC_RESTAURANT_ID=staging-restaurant-1
 NEXT_PUBLIC_DEBUG=true

@@ -251,7 +251,7 @@ export function Dashboard() {
 // hooks/useWebSocket.ts
 import { useEffect } from 'react';
 
-const WS_URL = process.env.NEXT_PUBLIC_BOT_WS_URL;
+const WS_URL = process.env.BOT_WS_URL;
 
 export function useWebSocket({ onMessage }: { onMessage: (msg: any) => void }) {
   useEffect(() => {

@@ -347,6 +347,9 @@ export async function getOrderStats(
 ) {
   const { from, to, days, locale = 'en' } = params;
   const query = new URLSearchParams();
+  // Some endpoints on the external backend require tenantId explicitly in the query
+  // even though X-Restaurant-Id header is sent. Include it for compatibility.
+  query.append('tenantId', restaurantId);
   if (from) query.append('from', from);
   if (to) query.append('to', to);
   if (!from && !to && days) query.append('days', String(days));
@@ -429,11 +432,14 @@ export async function getRatingTimeline(
 
 export async function getNotifications(
   restaurantId: string,
-  includeRead: boolean = false,
+  limit: number = 20,
+  cursor: string = '',
   locale: Locale = 'en'
 ) {
   const query = new URLSearchParams();
-  if (includeRead) query.append('include_read', 'true');
+  query.append('tenantId', restaurantId);
+  query.append('limit', limit.toString());
+  if (cursor) query.append('cursor', cursor);
 
   return apiFetch<NotificationsList>(`/api/notifications?${query}`, {
     restaurantId,
@@ -441,13 +447,38 @@ export async function getNotifications(
   });
 }
 
+export async function markNotificationsRead(
+  notificationIds: string[],
+  restaurantId: string
+) {
+  return apiFetch<{ success: boolean; data: { updatedCount: number } }>(
+    `/api/notifications/read?tenantId=${encodeURIComponent(restaurantId)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ notificationIds }),
+      restaurantId,
+    }
+  );
+}
+
+// Backwards compatibility - single notification mark as read
 export async function markNotificationRead(
   notificationId: string,
   restaurantId: string
 ) {
-  return apiFetch<{ success: boolean }>(`/api/notifications/${notificationId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ read: true }),
+  return markNotificationsRead([notificationId], restaurantId);
+}
+
+export async function triggerWelcomeBroadcast(
+  restaurantId: string,
+  force: boolean = false
+) {
+  return apiFetch<{
+    success: boolean;
+    data: { delivered: number; skipped: number; failed: number };
+  }>('/api/notifications/welcome-broadcast', {
+    method: 'POST',
+    body: JSON.stringify({ force }),
     restaurantId,
   });
 }

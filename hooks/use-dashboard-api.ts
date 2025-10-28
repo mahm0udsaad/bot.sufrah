@@ -464,30 +464,41 @@ export function useRatingTimeline(days: number = 30, locale: Locale = 'en') {
 // ============================================================================
 
 export function useNotifications(
-  includeRead: boolean = false,
-  locale: Locale = 'en',
-  pollInterval: number = 30000
+  limit: number = 20,
+  pollInterval: number = 30000,
+  locale: Locale = 'en'
 ) {
   const { user } = useAuth();
-  const [data, setData] = useState<api.NotificationsList | null>(null);
+  const [notifications, setNotifications] = useState<api.Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const tenantId = user?.tenantId || user?.restaurant?.id || '';
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (cursor: string = '') => {
     if (!tenantId) return;
 
-    const result = await actions.getNotifications(tenantId, includeRead, locale);
+    const result = await actions.getNotifications(tenantId, limit, cursor, locale);
     
     if (result.error) {
       setError(result.error);
+      setLoading(false);
     } else {
-      setData(result.data);
+      if (cursor) {
+        // Append for pagination
+        setNotifications((prev) => [...prev, ...(result.data?.notifications || [])]);
+      } else {
+        // Replace for initial load or refresh
+        setNotifications(result.data?.notifications || []);
+      }
+      setNextCursor(result.data?.nextCursor || null);
+      setUnreadCount(result.data?.unreadCount || 0);
       setError(null);
+      setLoading(false);
     }
-    setLoading(false);
-  }, [tenantId, includeRead, locale]);
+  }, [tenantId, limit, locale]);
 
   useEffect(() => {
     if (!tenantId) {
@@ -498,7 +509,7 @@ export function useNotifications(
     fetchData();
 
     // Poll for new notifications
-    const interval = setInterval(fetchData, pollInterval);
+    const interval = setInterval(() => fetchData(), pollInterval);
 
     return () => clearInterval(interval);
   }, [tenantId, fetchData, pollInterval]);
@@ -513,14 +524,39 @@ export function useNotifications(
     [tenantId, fetchData]
   );
 
+  const markMultipleAsRead = useCallback(
+    async (notificationIds: string[]) => {
+      if (!tenantId || notificationIds.length === 0) return;
+
+      await actions.markNotificationsRead(notificationIds, tenantId);
+      await fetchData();
+    },
+    [tenantId, fetchData]
+  );
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loading) return;
+    await fetchData(nextCursor);
+  }, [nextCursor, loading, fetchData]);
+
+  const addNotification = useCallback((notification: api.Notification) => {
+    setNotifications((prev) => [notification, ...prev]);
+    if (notification.status === 'unread') {
+      setUnreadCount((prev) => prev + 1);
+    }
+  }, []);
+
   return {
-    notifications: data?.notifications || [],
-    unreadCount: data?.unreadCount || 0,
-    totalCount: data?.totalCount || 0,
+    notifications,
+    unreadCount,
+    nextCursor,
     loading,
     error,
     markAsRead,
+    markMultipleAsRead,
+    loadMore,
     refetch: fetchData,
+    addNotification,
   };
 }
 

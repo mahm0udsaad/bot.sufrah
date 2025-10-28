@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
 import { LocaleSwitcher } from "@/components/locale-switcher"
 import { useI18n } from "@/hooks/use-i18n"
+import { RealtimeProvider } from "@/contexts/realtime-context"
 
 const NAV_ITEMS = [
   { labelKey: "navigation.dashboard", href: "/", icon: BarChart3 },
@@ -23,7 +24,6 @@ const NAV_ITEMS = [
   { labelKey: "navigation.botManagement", href: "/bot-management", icon: Bot },
   { labelKey: "navigation.logs", href: "/logs", icon: ScrollText },
   { labelKey: "navigation.usage", href: "/usage", icon: BarChart3 },
-  { labelKey: "navigation.templates", href: "/templates", icon: FileText },
   { labelKey: "navigation.settings", href: "/settings", icon: Settings },
 ]
 
@@ -73,7 +73,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   )
 
   return (
-    <div className="min-h-screen bg-background">
+    <RealtimeProvider>
+      <div className="min-h-screen bg-background">
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
@@ -238,5 +239,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         </main>
       </div>
     </div>
+    </RealtimeProvider>
   )
 }

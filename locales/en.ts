@@ -630,6 +630,18 @@ const en = {
       limitsUpdated: "Rate limits updated successfully",
       limitsFailed: "Unable to update rate limits",
     },
+    welcomeBroadcast: {
+      title: "Welcome Broadcast",
+      description: "Send a welcome message to all customers who have interacted with your bot",
+      warning: "This will send a welcome message to customers. Use with caution.",
+      send: "Send Welcome Message",
+      sendForce: "Force Send to All",
+      sending: "Sending...",
+      success: "Broadcast sent: {delivered} delivered, {skipped} skipped, {failed} failed",
+      failed: "Failed to trigger welcome broadcast",
+      hint1: "Regular send: Only sends to customers who haven't received a welcome message",
+      hint2: "Force send: Sends to all customers regardless of previous messages",
+    },
   },
 } as const
 

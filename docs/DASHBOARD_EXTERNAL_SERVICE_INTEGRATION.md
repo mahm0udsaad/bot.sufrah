@@ -573,7 +573,7 @@ BOT_API_TOKEN=sufrah_bot_0DJKLldY4IP7dBwEagEywUrC9Z4waN9yi3idlpMQLaM
 
 # Make available to browser (Next.js)
 NEXT_PUBLIC_BOT_URL=https://bot.sufrah.sa
-NEXT_PUBLIC_BOT_WS_URL=wss://bot.sufrah.sa/ws
+BOT_WS_URL=wss://bot.sufrah.sa/ws
 NEXT_PUBLIC_BOT_API_URL=https://bot.sufrah.sa/api
 ```
 

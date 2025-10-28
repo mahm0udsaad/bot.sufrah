@@ -21,8 +21,9 @@ interface BotMessage {
   conversation_id: string
   from_phone: string
   to_phone: string
-  message_type: "text" | "image" | "document" | "audio" | string
-  content: string
+  message_type: "text" | "image" | "document" | "audio" | "template" | string
+  content: string // Now formatted by backend (e.g., "📋 new_order_notification")
+  original_content?: string // Raw content (e.g., "HX4b088aa4afe1428c50a6b12026317ece")
   media_url: string | null
   timestamp: string
   is_from_customer: boolean
@@ -104,10 +105,30 @@ export function ChatInterface() {
 
     setSendingMessage(true)
     try {
-      await sendMessage(selectedConversationId, text)
-      // Message will be added via WebSocket message.created event
+      const sentMessage = await sendMessage(selectedConversationId, text)
+      
+      // Immediately add message to UI (optimistic update)
+      setMessages((prev) => {
+        const convMessages = prev[selectedConversationId] || []
+        const exists = convMessages.some((m) => m.id === sentMessage.id)
+        
+        if (exists) {
+          return prev // Already added (unlikely but possible)
+        }
+
+        const updated = [...convMessages, sentMessage]
+        updated.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+
+        return {
+          ...prev,
+          [selectedConversationId]: updated,
+        }
+      })
+      
+      // WebSocket message.sent event will be deduplicated by the subscription handler
     } catch (err) {
       console.error("Failed to send message:", err)
+      toast.error("فشل إرسال الرسالة")
     } finally {
       setSendingMessage(false)
     }
@@ -116,8 +137,33 @@ export function ChatInterface() {
   // Handle sending media
   const handleSendMedia = async (file: File, caption?: string) => {
     if (!selectedConversationId) return
-    await sendMedia(selectedConversationId, file, caption)
-    // Message will arrive via WebSocket message.created
+    
+    try {
+      const sentMessage = await sendMedia(selectedConversationId, file, caption)
+      
+      // Immediately add message to UI (optimistic update)
+      setMessages((prev) => {
+        const convMessages = prev[selectedConversationId] || []
+        const exists = convMessages.some((m) => m.id === sentMessage.id)
+        
+        if (exists) {
+          return prev // Already added (unlikely but possible)
+        }
+
+        const updated = [...convMessages, sentMessage]
+        updated.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+
+        return {
+          ...prev,
+          [selectedConversationId]: updated,
+        }
+      })
+      
+      // WebSocket message.sent event will be deduplicated by the subscription handler
+    } catch (err) {
+      console.error("Failed to send media:", err)
+      throw err // Re-throw so MessageThread can handle it
+    }
   }
 
   // Handle bot toggle for individual conversations

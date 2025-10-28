@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react"
 
-const BOT_WS_URL = process.env.NEXT_PUBLIC_BOT_WS_URL || process.env.BOT_WS_URL || "wss://bot.sufrah.sa/ws"
+const BOT_WS_URL = process.env.BOT_WS_URL || process.env.BOT_WS_URL || "wss://bot.sufrah.sa/ws"
 const BOT_API_URL = process.env.NEXT_PUBLIC_BOT_API_URL || process.env.BOT_API_URL || "https://bot.sufrah.sa/api"
 
 interface BotConversation {
@@ -20,8 +20,9 @@ interface BotMessage {
   conversation_id: string
   from_phone: string
   to_phone: string
-  message_type: "text" | "image" | "document" | "audio" | string
-  content: string
+  message_type: "text" | "image" | "document" | "audio" | "template" | string
+  content: string // Now formatted by backend (e.g., "📋 new_order_notification")
+  original_content?: string // Raw content (e.g., "HX4b088aa4afe1428c50a6b12026317ece")
   media_url: string | null
   timestamp: string
   is_from_customer: boolean
@@ -53,11 +54,14 @@ interface WebSocketMessage {
     | "connection"
     | "conversation.bootstrap"
     | "message.created"
+    | "message.sent"
     | "conversation.updated"
     | "bot.status"
     | "order.created"
     | "order.updated"
   data: any
+  message?: any // For message.sent events
+  conversation?: any // For message.sent events
 }
 
 interface OrderItem {
@@ -100,8 +104,8 @@ interface BotWebSocketContextValue {
   subscribeToOrderEvents: (handler: OrderHandler) => () => void
   fetchConversations: () => Promise<BotConversation[]>
   fetchMessages: (conversationId: string) => Promise<BotMessage[]>
-  sendMessage: (conversationId: string, message: string) => Promise<void>
-  sendMedia: (conversationId: string, fileOrUrl: File | string, caption?: string) => Promise<void>
+  sendMessage: (conversationId: string, message: string) => Promise<BotMessage>
+  sendMedia: (conversationId: string, fileOrUrl: File | string, caption?: string) => Promise<BotMessage>
   toggleBot: (enabled: boolean) => Promise<void>
   reconnect: () => void
 }
@@ -176,9 +180,12 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
               break
               
             case "message.created":
+            case "message.sent":
               // Normalize message payload to internal shape
               {
-                const m: any = message.data
+                // message.sent has structure { message: {...}, conversation: {...} }
+                // message.created has structure { data: {...} }
+                const m: any = message.type === "message.sent" ? message.message : message.data
                 const normalizedType =
                   m.message_type ??
                   m.messageType ??
@@ -190,6 +197,7 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
                   to_phone: m.to_phone ?? m.toPhone ?? "",
                   message_type: normalizedType,
                   content: m.content ?? m.body ?? "",
+                  original_content: m.original_content ?? m.originalContent ?? undefined,
                   media_url: m.media_url ?? m.mediaUrl ?? null,
                   timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
                   is_from_customer: typeof m.is_from_customer === "boolean" ? m.is_from_customer : (m.direction ?? "OUT") === "IN",
@@ -198,6 +206,32 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
                   template_preview: m.templatePreview ?? m.template_preview ?? undefined,
                 }
                 messageHandlers.current.forEach((handler) => handler(normalized))
+                
+                // For message.sent events, also update conversation metadata
+                if (message.type === "message.sent" && message.conversation) {
+                  const c = message.conversation
+                  const updatedConv: BotConversation = {
+                    id: c.id,
+                    customer_phone: c.customer_phone ?? c.customerPhone ?? c.customerWa ?? "",
+                    customer_name: c.customer_name ?? c.customerName ?? null,
+                    status: (c.status ?? "active").toString().toLowerCase(),
+                    last_message_at: c.lastMessageAt ?? c.last_message_at ?? new Date().toISOString(),
+                    unread_count: c.unreadCount ?? c.unread_count ?? 0,
+                    is_bot_active: c.isBotActive ?? c.is_bot_active ?? true,
+                  }
+                  setConversations((prev) => {
+                    const index = prev.findIndex((cv) => cv.id === updatedConv.id)
+                    if (index >= 0) {
+                      const updated = [...prev]
+                      updated[index] = { ...updated[index], ...updatedConv }
+                      return updated.sort(
+                        (a, b) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime(),
+                      )
+                    }
+                    return prev
+                  })
+                  conversationHandlers.current.forEach((handler) => handler(updatedConv))
+                }
               }
               break
               
@@ -411,6 +445,7 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
           m.messageType ??
           (m.templatePreview || m.template_preview ? "template" : (m.media_url || m.mediaUrl ? "document" : "text")),
         content: m.content ?? m.body ?? "",
+        original_content: m.original_content ?? m.originalContent ?? undefined,
         media_url: m.media_url ?? m.mediaUrl ?? null,
         timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
         is_from_customer:
@@ -436,6 +471,7 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
         m.messageType ??
         (m.templatePreview || m.template_preview ? "template" : (m.media_url || m.mediaUrl ? "document" : "text")),
       content: m.content ?? m.body ?? "",
+      original_content: m.original_content ?? m.originalContent ?? undefined,
       media_url: m.media_url ?? m.mediaUrl ?? null,
       timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
       is_from_customer:
@@ -450,7 +486,7 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
     }))
   }
 
-  const sendMessage = async (conversationId: string, message: string): Promise<void> => {
+  const sendMessage = async (conversationId: string, message: string): Promise<BotMessage> => {
     // Proxy through internal API to ensure auth and DB persistence
     const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: "POST",
@@ -460,13 +496,35 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
     if (!res.ok) {
       throw new Error("Failed to send message")
     }
+    
+    const responseData = await res.json()
+    const m = responseData.data?.message || responseData.message || responseData
+    
+    // Normalize the response to BotMessage format
+    const normalizedMessage: BotMessage = {
+      id: m.id,
+      conversation_id: m.conversation_id ?? m.conversationId ?? conversationId,
+      from_phone: m.from_phone ?? m.fromPhone ?? "",
+      to_phone: m.to_phone ?? m.toPhone ?? "",
+      message_type: m.message_type ?? m.messageType ?? "text",
+      content: m.content ?? m.body ?? message,
+      original_content: m.original_content ?? m.originalContent ?? undefined,
+      media_url: m.media_url ?? m.mediaUrl ?? null,
+      timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
+      is_from_customer: false, // Sent by agent
+      content_sid: m.contentSid ?? m.content_sid,
+      variables: m.variables ?? undefined,
+      template_preview: m.templatePreview ?? m.template_preview ?? undefined,
+    }
+    
+    return normalizedMessage
   }
 
   const sendMedia = async (
     conversationId: string,
     fileOrUrl: File | string,
     caption?: string,
-  ): Promise<void> => {
+  ): Promise<BotMessage> => {
     // 1) If we received a File, upload it to storage to get a public URL
     let mediaUrl: string
     if (typeof fileOrUrl !== "string") {
@@ -499,6 +557,28 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
       const errorJson = await res.json().catch(() => ({}))
       throw new Error(errorJson.message || "فشل إرسال الملف")
     }
+    
+    const responseData = await res.json()
+    const m = responseData.data?.message || responseData.message || responseData
+    
+    // Normalize the response to BotMessage format
+    const normalizedMessage: BotMessage = {
+      id: m.id,
+      conversation_id: m.conversation_id ?? m.conversationId ?? conversationId,
+      from_phone: m.from_phone ?? m.fromPhone ?? "",
+      to_phone: m.to_phone ?? m.toPhone ?? "",
+      message_type: m.message_type ?? m.messageType ?? "image",
+      content: m.content ?? m.body ?? caption ?? "🖼️ Media",
+      original_content: m.original_content ?? m.originalContent ?? undefined,
+      media_url: m.media_url ?? m.mediaUrl ?? mediaUrl,
+      timestamp: m.timestamp ?? m.createdAt ?? new Date().toISOString(),
+      is_from_customer: false, // Sent by agent
+      content_sid: m.contentSid ?? m.content_sid,
+      variables: m.variables ?? undefined,
+      template_preview: m.templatePreview ?? m.template_preview ?? undefined,
+    }
+    
+    return normalizedMessage
   }
 
   const toggleBot = async (enabled: boolean): Promise<void> => {

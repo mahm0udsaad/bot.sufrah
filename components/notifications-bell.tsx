@@ -14,21 +14,26 @@ import { useNotifications } from "@/hooks/use-dashboard-api"
 import { useI18n } from "@/hooks/use-i18n"
 import { cn } from "@/lib/utils"
 
-const SEVERITY_STYLES = {
-  info: {
+const TYPE_STYLES = {
+  order_created: {
     bg: "bg-blue-50 dark:bg-blue-900/20",
     border: "border-blue-200 dark:border-blue-800",
     icon: "text-blue-600 dark:text-blue-400",
   },
-  warning: {
-    bg: "bg-amber-50 dark:bg-amber-900/20",
-    border: "border-amber-200 dark:border-amber-800",
-    icon: "text-amber-600 dark:text-amber-400",
+  conversation_started: {
+    bg: "bg-green-50 dark:bg-green-900/20",
+    border: "border-green-200 dark:border-green-800",
+    icon: "text-green-600 dark:text-green-400",
   },
-  error: {
-    bg: "bg-red-50 dark:bg-red-900/20",
-    border: "border-red-200 dark:border-red-800",
-    icon: "text-red-600 dark:text-red-400",
+  welcome_broadcast: {
+    bg: "bg-indigo-50 dark:bg-indigo-900/20",
+    border: "border-indigo-200 dark:border-indigo-800",
+    icon: "text-indigo-600 dark:text-indigo-400",
+  },
+  default: {
+    bg: "bg-gray-50 dark:bg-gray-900/20",
+    border: "border-gray-200 dark:border-gray-800",
+    icon: "text-gray-600 dark:text-gray-400",
   },
 }
 
@@ -42,16 +47,19 @@ export function NotificationsBell() {
     loading,
     error,
     markAsRead,
+    markMultipleAsRead,
     refetch,
-  } = useNotifications(false, locale as 'en' | 'ar', 30000) // Poll every 30 seconds
+  } = useNotifications(20, 30000, locale as 'en' | 'ar') // Poll every 30 seconds
 
   const handleMarkAsRead = async (notificationId: string) => {
     await markAsRead(notificationId)
   }
 
   const handleMarkAllAsRead = async () => {
-    const unreadNotifications = notifications.filter((n) => !n.read)
-    await Promise.all(unreadNotifications.map((n) => markAsRead(n.id)))
+    const unreadNotifications = notifications.filter((n) => n.status === "unread")
+    if (unreadNotifications.length > 0) {
+      await markMultipleAsRead(unreadNotifications.map((n) => n.id))
+    }
   }
 
   return (
@@ -120,45 +128,45 @@ export function NotificationsBell() {
           ) : (
             <div className="divide-y">
               {notifications.map((notification) => {
-                const severityStyle = SEVERITY_STYLES[notification.severity]
+                const typeStyle = TYPE_STYLES[notification.type as keyof typeof TYPE_STYLES] || TYPE_STYLES.default
 
                 return (
                   <div
                     key={notification.id}
                     className={cn(
                       "p-4 hover:bg-muted/50 transition-colors relative",
-                      !notification.read && "bg-muted/30"
+                      notification.status === "unread" && "bg-muted/30"
                     )}
                   >
-                    {!notification.read && (
+                    {notification.status === "unread" && (
                       <div className="absolute left-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-primary" />
                     )}
 
-                    <div className={cn("ml-3", !notification.read && "ml-5")}>
+                    <div className={cn("ml-3", notification.status === "unread" && "ml-5")}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1">
                           <div
                             className={cn(
                               "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium mb-1",
-                              severityStyle.bg,
-                              severityStyle.border,
+                              typeStyle.bg,
+                              typeStyle.border,
                               "border"
                             )}
                           >
-                            <span className={cn("w-1.5 h-1.5 rounded-full", severityStyle.icon, "bg-current")} />
-                            <span className={severityStyle.icon}>
+                            <span className={cn("w-1.5 h-1.5 rounded-full", typeStyle.icon, "bg-current")} />
+                            <span className={typeStyle.icon}>
                               {notification.type.replace(/_/g, " ").toUpperCase()}
                             </span>
                           </div>
                           <h4 className="text-sm font-medium mb-1">{notification.title}</h4>
                           <p className="text-sm text-muted-foreground mb-2">
-                            {notification.message}
+                            {notification.body}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {notification.createdAtRelative}
+                            {new Date(notification.createdAt).toLocaleString()}
                           </p>
                         </div>
-                        {!notification.read && (
+                        {notification.status === "unread" && (
                           <Button
                             variant="ghost"
                             size="icon"

@@ -54,7 +54,7 @@ async function resolveRestaurantId(request: NextRequest): Promise<string | null>
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const restaurantId = await resolveRestaurantId(request)
-    const { id: conversationId } = await params
+    const { id: conversationIdOrPhone } = await params
 
     if (!restaurantId) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
@@ -65,28 +65,29 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, message: "Restaurant not found" }, { status: 404 })
     }
 
-    // IMPORTANT: Bot API expects customer phone number in E.164 format, not DB conversation ID
-    // Try to fetch the conversation to get the customer phone
-    let customerPhone: string = conversationId
-    try {
-      const conversation = await db.getConversation(restaurant.id, conversationId)
-      // If conversation exists in DB, use the customer phone from it
-      // customerWa is the WhatsApp phone number field in the database
-      if (conversation && conversation.customerWa) {
-        customerPhone = conversation.customerWa
-        console.log(`[send-media] Resolved conversation ${conversationId} to phone: ${customerPhone}`)
-      }
-    } catch (error) {
-      // If conversation not found in DB, assume conversationId is already a phone number
-      console.log(`[send-media] Conversation not in local DB, using conversationId as phone: ${conversationId}`)
-    }
-
-    // Normalize to E.164 format with leading '+' (required by Bot API)
-    customerPhone = customerPhone.startsWith('+')
-      ? customerPhone
-      : `+${customerPhone.replace(/^\+?/, '')}`
+    // Try to resolve conversation - might be ID or phone number
+    let conversation = await db.getConversation(restaurant.id, conversationIdOrPhone)
     
-    console.log(`[send-media] Using normalized phone: ${customerPhone}`)
+    // If not found by ID, try as phone number
+    if (!conversation) {
+      const normalizedPhone = conversationIdOrPhone.replace(/^whatsapp:/, "").replace(/[^\d+]/g, "").replace(/^\+/, "")
+      const convByPhone = await db.findOrCreateConversation(restaurant.id, normalizedPhone)
+      conversation = convByPhone
+    }
+    
+    if (!conversation) {
+      return NextResponse.json({ success: false, message: "Conversation not found" }, { status: 404 })
+    }
+    
+    const conversationId = conversation.id
+
+    // Get bot configuration to find botId
+    const bot = await db.getPrimaryRestaurantByUserId(restaurant.userId).then(r => r?.bots)
+    const botId = bot?.id
+
+    if (!botId) {
+      return NextResponse.json({ success: false, message: "Bot not configured for this restaurant" }, { status: 400 })
+    }
 
     const contentType = request.headers.get("content-type") || ""
 
@@ -101,8 +102,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       botHeaders["X-API-Key"] = BOT_API_KEY
     }
 
-    // Forward to bot API using customer phone number (not DB conversation ID)
-    const url = `${BOT_API_URL.replace(/\/$/, "")}/conversations/${encodeURIComponent(customerPhone)}/send-media`
+    // Call bot /send-media endpoint with tenantId
+    const url = `${BOT_API_URL.replace(/\/$/, "")}/conversations/${encodeURIComponent(conversationId)}/send-media?tenantId=${encodeURIComponent(botId)}`
 
     if (contentType.includes("application/json")) {
       const body = await request.json()
@@ -116,14 +117,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
       console.log(`[send-media] Attempting to send media to Bot API:`, {
         url,
-        conversationId_DB: conversationId,
-        customerPhone,
+        conversationId,
         mediaUrl,
         caption,
         mediaType,
         restaurantId
       })
 
+      // Send to bot API with media payload
       let res = await fetch(url, {
         method: "POST",
         headers: {
@@ -133,17 +134,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         body: JSON.stringify({ mediaUrl, caption, mediaType }),
       })
 
-      console.log(`[send-media] Bot API /send-media response:`, {
+      console.log(`[send-media] Bot API response:`, {
         status: res.status,
         statusText: res.statusText,
         ok: res.ok
       })
-
-      // DO NOT fall back to /send - it's text-only and will return "Message is required"
-      // If /send-media fails, it's either:
-      // 1. Endpoint doesn't exist (404) - Bot API needs to be updated
-      // 2. Wrong parameters (400) - Check phone format, restaurant ID, etc.
-      // 3. Restaurant not found (404) - Wrong restaurant ID or not configured in Bot API
 
       if (!res.ok) {
         const text = await res.text()

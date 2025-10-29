@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useBotWebSocket } from "@/contexts/bot-websocket-context"
-import { ConversationList } from "./ConversationList"
 import { MessageThread } from "./MessageThread"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -11,13 +10,9 @@ import {
   ArrowRight, 
   Search, 
   MoreVertical, 
-  Phone, 
-  Video, 
   Bot,
   MessageCircle,
-  Settings,
   Users,
-  Menu,
   Loader2
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -494,7 +489,7 @@ export function ChatInterface() {
                           </div>
                         </div>
                       </div>
-      </div>
+                      </div>
 
                     {/* Hover indicator */}
                     <div className={cn(

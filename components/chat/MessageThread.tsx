@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react"
+import { createPortal } from "react-dom"
 import { TemplateMessage } from "./TemplateMessage"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -11,7 +12,6 @@ import {
   Mic, 
   MapPin, 
   Loader2, 
-  Paperclip, 
   X,
   Smile,
   Plus
@@ -79,6 +79,8 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [animatingMessageIds, setAnimatingMessageIds] = useState<Set<string>>(new Set())
   const previousMessageIdsRef = useRef<Set<string>>(new Set())
+  const emojiButtonRef = useRef<HTMLButtonElement>(null)
+  const [isEmojiOpen, setIsEmojiOpen] = useState(false)
 
   // Detect new messages and trigger animations
   useEffect(() => {
@@ -159,6 +161,25 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
     }
   }
 
+  const insertEmojiAtCursor = useCallback((emoji: string) => {
+    const input = textareaRef.current
+    if (!input) {
+      setMessageText((prev) => prev + emoji)
+      return
+    }
+    const start = input.selectionStart ?? messageText.length
+    const end = input.selectionEnd ?? messageText.length
+    const next = messageText.slice(0, start) + emoji + messageText.slice(end)
+    setMessageText(next)
+    requestAnimationFrame(() => {
+      input.focus()
+      const cursor = start + emoji.length
+      input.setSelectionRange(cursor, cursor)
+      input.style.height = "auto"
+      input.style.height = Math.min(input.scrollHeight, 120) + "px"
+    })
+  }, [messageText])
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -219,6 +240,154 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
       default:
         return null
     }
+  }
+
+  // Simple custom emoji popover (no shadcn)
+  const EmojiPopover = ({
+    anchorEl,
+    containerEl,
+    mode = "center",
+    onSelect,
+    onClose,
+  }: {
+    anchorEl: HTMLElement | null
+    containerEl?: HTMLElement | null
+    mode?: "center" | "anchorTop"
+    onSelect: (emoji: string) => void
+    onClose: () => void
+  }) => {
+    const panelRef = useRef<HTMLDivElement>(null)
+    const [style, setStyle] = useState<React.CSSProperties>({ position: "fixed", left: -9999, top: -9999, opacity: 0, zIndex: 1000 })
+    const STORAGE_KEY = "sufrah_recent_emojis"
+
+    const [recent, setRecent] = useState<string[]>([])
+
+    useEffect(() => {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY)
+        if (saved) setRecent(JSON.parse(saved))
+      } catch {}
+    }, [])
+
+    const updatePosition = useCallback(() => {
+      const margin = 8
+      const maxWidth = Math.min(360, window.innerWidth - margin * 2)
+      const measuredHeight = panelRef.current?.offsetHeight ?? 260
+
+      if (mode === "center" && (containerEl || anchorEl)) {
+        const rect = (containerEl ?? anchorEl)!.getBoundingClientRect()
+        let left = rect.left + rect.width / 2 - maxWidth / 2
+        if (left < margin) left = margin
+        if (left + maxWidth > window.innerWidth - margin) {
+          left = window.innerWidth - margin - maxWidth
+        }
+        let top = rect.top + rect.height / 2 - measuredHeight / 2
+        if (top < margin) top = margin
+        if (top + measuredHeight > window.innerHeight - margin) {
+          top = Math.max(margin, window.innerHeight - margin - measuredHeight)
+        }
+        setStyle({ position: "fixed", left, top, width: maxWidth, zIndex: 1000, opacity: 1 })
+        return
+      }
+
+      if (anchorEl) {
+        const rect = anchorEl.getBoundingClientRect()
+        let left = rect.left + rect.width / 2 - maxWidth / 2
+        if (left < margin) left = margin
+        if (left + maxWidth > window.innerWidth - margin) {
+          left = window.innerWidth - margin - maxWidth
+        }
+        let top = rect.top - measuredHeight - 10
+        if (top < margin) top = margin
+        if (top + measuredHeight > window.innerHeight - margin) {
+          top = Math.max(margin, window.innerHeight - margin - measuredHeight)
+        }
+        setStyle({ position: "fixed", left, top, width: maxWidth, zIndex: 1000, opacity: 1 })
+      }
+    }, [anchorEl, containerEl, mode])
+
+    useLayoutEffect(() => {
+      updatePosition()
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [anchorEl])
+
+    useEffect(() => {
+      window.addEventListener("resize", updatePosition)
+      window.addEventListener("scroll", updatePosition, true)
+      const handleDown = (e: MouseEvent) => {
+        const target = e.target as Node
+        if (panelRef.current?.contains(target)) return
+        if (anchorEl && anchorEl.contains(target as Node)) return
+        onClose()
+      }
+      const handleKey = (e: KeyboardEvent) => {
+        if (e.key === "Escape") onClose()
+      }
+      document.addEventListener("mousedown", handleDown)
+      document.addEventListener("keydown", handleKey)
+      return () => {
+        window.removeEventListener("resize", updatePosition)
+        window.removeEventListener("scroll", updatePosition, true)
+        document.removeEventListener("mousedown", handleDown)
+        document.removeEventListener("keydown", handleKey)
+      }
+    }, [anchorEl, onClose, updatePosition])
+
+    const select = (emoji: string) => {
+      onSelect(emoji)
+      setRecent((prev) => {
+        const next = [emoji, ...prev.filter((e) => e !== emoji)].slice(0, 18)
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch {}
+        return next
+      })
+      onClose()
+    }
+
+    const QUICK = [
+      "😂","👍","❤️","😊","🙏","🎉","😄","😉","🥰","😅","🤝","✅","❌","ℹ️","🔔","📍"
+    ]
+    const ORDER = [
+      "🛒","📦","🚚","⏳","🕒","💵","💳","💰","🧾","🔁","♻️"
+    ]
+    const FOOD = [
+      "🍔","🍟","🍕","🌯","🥙","🍗","🍩","🍰","🍽️","☕","🥤"
+    ]
+    const SMILEYS = [
+      "😀","😁","😂","🤣","😊","😇","🙂","😉","😌","😍","😘","😗","😅","🤗","🤭","😎","🤔","😴","😤","😢","😭","😱","🤯","🤝"
+    ]
+
+    const Section = ({ title, emojis }: { title: string; emojis: string[] }) => (
+      <div className="mb-2">
+        <div className="text-[11px] font-medium text-gray-500 px-1 mb-1">{title}</div>
+        <div className="grid grid-cols-8 gap-1">
+          {emojis.map((e) => (
+            <button
+              key={e}
+              type="button"
+              onClick={() => select(e)}
+              className="h-9 w-9 flex items-center justify-center rounded-full hover:bg-gray-100 text-xl"
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+
+    const panel = (
+      <div ref={panelRef} style={style} className="relative bg-white border border-gray-200 rounded-2xl shadow-xl p-2">
+        {mode === "anchorTop" && (
+          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 rotate-45 bg-white border-l border-t border-gray-200" />
+        )}
+        {recent.length > 0 && <Section title="الأخيرة" emojis={recent} />}
+        <Section title="سريعة" emojis={QUICK} />
+        <Section title="الطلبات والحالة" emojis={ORDER} />
+        <Section title="أطعمة ومشروبات" emojis={FOOD} />
+        <Section title="ابتسامات" emojis={SMILEYS} />
+      </div>
+    )
+
+    return createPortal(panel, document.body)
   }
 
   const renderMessageContent = (message: BotMessage) => {
@@ -500,13 +669,15 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
 
             {/* Text input */}
             <div className="flex-1 bg-white rounded-full shadow-sm flex items-end overflow-hidden">
-              <Button
-                variant="ghost"
-                size="icon"
+                  <Button
+                    variant="ghost"
+                    size="icon"
                 className="h-11 w-11 flex-shrink-0 rounded-full"
-              >
-                <Smile className="h-5 w-5 text-gray-500" />
-              </Button>
+                ref={emojiButtonRef}
+                onClick={() => setIsEmojiOpen((v) => !v)}
+                  >
+                    <Smile className="h-5 w-5 text-gray-500" />
+                  </Button>
               
               <Textarea
                 ref={textareaRef}
@@ -524,6 +695,16 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
                 rows={1}
               />
             </div>
+
+            {isEmojiOpen && (
+              <EmojiPopover
+                anchorEl={emojiButtonRef.current}
+                containerEl={messagesContainerRef.current}
+                mode="center"
+                onSelect={(e) => insertEmojiAtCursor(e)}
+                onClose={() => setIsEmojiOpen(false)}
+              />
+            )}
 
             {/* Send button */}
             <Button

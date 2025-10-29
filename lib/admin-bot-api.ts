@@ -50,6 +50,15 @@ export interface CreateBotRequest {
   maxMessagesPerDay?: number;
 }
 
+export interface AdminTwilioSender {
+  sid: string
+  sender_id?: string
+  channel?: string
+  status?: string
+  configuration?: Record<string, unknown>
+  profile?: Record<string, unknown>
+}
+
 /**
  * Get authentication headers with admin password
  */
@@ -130,6 +139,26 @@ export async function deleteBot(id: string): Promise<void> {
   if (!response.ok) {
     throw new Error('Failed to delete bot');
   }
+}
+
+export async function listTwilioSenders(channel: string = 'whatsapp'): Promise<AdminTwilioSender[]> {
+  const response = await fetch(`/api/admin/twilio/senders?channel=${encodeURIComponent(channel)}`, {
+    headers: getAuthHeaders(),
+    cache: 'no-store',
+  })
+
+  if (!response.ok) {
+    let details: any = null
+    try {
+      details = await response.json()
+    } catch {}
+    const message = details?.error || 'Failed to fetch Twilio senders'
+    throw new Error(message)
+  }
+
+  const data = await response.json()
+  const senders: AdminTwilioSender[] = Array.isArray(data?.senders) ? data.senders : Array.isArray(data) ? data : []
+  return senders
 }
 
 // Known sender templates for quick-fill

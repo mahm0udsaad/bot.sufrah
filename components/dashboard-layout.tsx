@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth"
 import { LocaleSwitcher } from "@/components/locale-switcher"
 import { useI18n } from "@/hooks/use-i18n"
 import { RealtimeProvider } from "@/contexts/realtime-context"
+import { useProfile } from "@/hooks/use-dashboard-api"
 
 const NAV_ITEMS = [
   { labelKey: "navigation.dashboard", href: "/", icon: BarChart3 },
@@ -49,6 +50,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const restaurantName = user?.restaurant?.name || t("common.brand.defaultName")
   const pathname = usePathname()
   const isRtl = dir === "rtl"
+  const { data: profile } = useProfile()
+  const brandImage = profile?.logoUrl || profile?.sloganPhoto || null
   
   useEffect(() => {
     try {
@@ -65,7 +68,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const isAdmin = true // Temporarily allow all logged-in users for testing
   // TODO: Update this with proper admin check:
   // const isAdmin = user?.email?.includes('admin') || user?.phone_number === '+966500000000'
-
+console.log(brandImage)
   const navigation = useMemo(
     () =>
       NAV_ITEMS.map((item) => {
@@ -141,11 +144,19 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             isRtl ? "border-l border-sidebar-border" : "border-r border-sidebar-border",
           )}
         >
-            <div className={cn("flex h-16 shrink-0 items-center gap-2", sidebarCollapsed && "justify-center")}>
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">S</span>
-            </div>
-              <span className={cn("font-semibold text-sidebar-foreground", sidebarCollapsed && "hidden")}>{restaurantName}</span>
+          <div className={cn("flex h-16 shrink-0 items-center gap-2", sidebarCollapsed && "justify-center")}> 
+            {brandImage ? (
+              <img
+                src={brandImage}
+                alt={restaurantName || "Restaurant"}
+                className="h-8 w-8 rounded-lg object-cover"
+              />
+            ) : (
+              <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
+                <span className="text-primary-foreground font-bold text-sm">S</span>
+              </div>
+            )}
+            <span className={cn("font-semibold text-sidebar-foreground", sidebarCollapsed && "hidden")}>{restaurantName}</span>
           </div>
           <nav className="flex flex-1 flex-col">
             <ul role="list" className="flex flex-1 flex-col gap-y-1">
@@ -168,15 +179,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 </li>
               ))}
               
-              {isAdmin && !sidebarCollapsed && (
-                <>
-                  <li className="my-3 border-t border-sidebar-border pt-3">
-                    <div className="px-3 py-1 text-xs font-semibold text-sidebar-foreground/60 uppercase">
-                      {t("navigation.adminSection")}
-                    </div>
-                  </li>
-                </>
-              )}
             </ul>
           </nav>
           <div className="mt-auto border-t border-sidebar-border pt-4">

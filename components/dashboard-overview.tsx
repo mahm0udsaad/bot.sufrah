@@ -10,6 +10,8 @@ import { MessageSquare, Package, Clock, TrendingUp, AlertTriangle, CheckCircle, 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts"
 import { useI18n } from "@/hooks/use-i18n"
 import type { DashboardOverview as DashboardOverviewData } from "@/lib/dashboard-api"
+import Link from "next/link"
+import { useProfile } from "@/hooks/use-dashboard-api"
 
 interface DashboardOverviewProps {
   overview: DashboardOverviewData | null
@@ -33,6 +35,8 @@ export function DashboardOverview({ overview, error, restaurantName }: Dashboard
   const { t } = useI18n()
   const router = useRouter()
   const [isRefreshing, startRefresh] = useTransition()
+  const { data: profile } = useProfile()
+  const appsLink = profile?.appsLink || null
 
   const fallbackUsageData = useMemo(
     () => [
@@ -88,17 +92,26 @@ export function DashboardOverview({ overview, error, restaurantName }: Dashboard
           </CardHeader>
         </Card>
       ) : null}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             {overview?.restaurantName || restaurantName || t("dashboard.overview.title")}
           </h1>
           <p className="text-muted-foreground">{t("dashboard.overview.subtitle")}</p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
-          <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
-          {t("dashboard.overview.refresh")}
-        </Button>
+        <div className="flex items-center gap-2">
+          {appsLink ? (
+            <Link href={appsLink} target="_blank" rel="noopener noreferrer" className="inline-flex">
+              <Button size="sm" variant="default">
+                {t("common.openApp", { defaultValue: "Open ordering app" })}
+              </Button>
+            </Link>
+          ) : null}
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isRefreshing}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshing ? "animate-spin" : ""}`} />
+            {t("dashboard.overview.refresh")}
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

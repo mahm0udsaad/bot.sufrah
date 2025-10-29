@@ -831,6 +831,9 @@ export interface RestaurantProfile {
   address: string | null;
   phone: string | null;
   logoUrl: string | null;
+  // New branding/links
+  appsLink?: string | null; // Merchant ordering URL (CTA)
+  sloganPhoto?: string | null; // Marketing image; may be same as logo when no custom logo
   createdAt: string;
   updatedAt: string;
 }

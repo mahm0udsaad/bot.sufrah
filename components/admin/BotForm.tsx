@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { X, Check, AlertCircle, Sparkles } from "lucide-react"
 import type { Bot } from "./BotList"
+import { listTwilioSenders, type AdminTwilioSender } from "@/lib/admin-bot-api"
 
 interface BotFormProps {
   bot?: Bot
@@ -58,6 +59,9 @@ const PRESET_BOTS = {
 export function BotForm({ bot, onSubmit, onCancel }: BotFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [senders, setSenders] = useState<AdminTwilioSender[]>([])
+  const [sendersLoading, setSendersLoading] = useState(false)
+  const [sendersError, setSendersError] = useState<string | null>(null)
   const [formData, setFormData] = useState<BotFormData>({
     name: bot?.name || "",
     restaurantName: bot?.restaurantName || "",
@@ -74,6 +78,44 @@ export function BotForm({ bot, onSubmit, onCancel }: BotFormProps) {
     maxMessagesPerDay: bot?.maxMessagesPerDay || 1000,
     isActive: bot?.isActive ?? true,
   })
+
+  useEffect(() => {
+    let cancelled = false
+    const fetchSenders = async () => {
+      try {
+        setSendersLoading(true)
+        setSendersError(null)
+        const data = await listTwilioSenders('whatsapp')
+        if (!cancelled) setSenders(data)
+      } catch (e: any) {
+        if (!cancelled) setSendersError(e?.message || 'تعذر جلب الأرقام من Twilio')
+      } finally {
+        if (!cancelled) setSendersLoading(false)
+      }
+    }
+    fetchSenders()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const handleSenderSelect = (sid: string) => {
+    const s = senders.find((x) => x.sid === sid)
+    if (!s) return
+    const rawSenderId = s.sender_id || ""
+    // Normalize whatsapp number: prefer full whatsapp:+E164
+    let whatsappVal = rawSenderId
+    if (whatsappVal && !whatsappVal.startsWith("whatsapp:")) {
+      whatsappVal = whatsappVal.startsWith("+") ? `whatsapp:${whatsappVal}` : `whatsapp:+${whatsappVal}`
+    }
+    const wabaId = (s.configuration as any)?.waba_id || (s.configuration as any)?.wabaId || ""
+    setFormData((prev) => ({
+      ...prev,
+      whatsappNumber: whatsappVal || prev.whatsappNumber,
+      senderSid: s.sid || prev.senderSid,
+      wabaId: wabaId || prev.wabaId,
+    }))
+  }
 
   const handleQuickFill = (preset: keyof typeof PRESET_BOTS) => {
     const data = PRESET_BOTS[preset]
@@ -147,6 +189,32 @@ export function BotForm({ bot, onSubmit, onCancel }: BotFormProps) {
 
           <div className="space-y-4">
             <h3 className="text-sm font-medium border-b pb-2">المعلومات الأساسية</h3>
+
+            <div className="space-y-2">
+              <Label htmlFor="twilioSender">اختر رقم واتساب من Twilio</Label>
+              <Select onValueChange={handleSenderSelect} disabled={sendersLoading || !!bot}>
+                <SelectTrigger id="twilioSender">
+                  <SelectValue placeholder={sendersLoading ? "جارِ التحميل..." : bot ? "التحديد متاح فقط عند الإضافة" : "اختر المرسل (Sender)"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {senders.map((s) => {
+                    const label = `${s.sender_id || s.sid} ${s.status ? `(${s.status})` : ""}`
+                    return (
+                      <SelectItem key={s.sid} value={s.sid}>
+                        {label}
+                      </SelectItem>
+                    )
+                  })}
+                </SelectContent>
+              </Select>
+              {sendersError && (
+                <p className="text-xs text-red-500">{sendersError}</p>
+              )}
+              {!sendersError && !sendersLoading && senders.length === 0 && (
+                <p className="text-xs text-muted-foreground">لا توجد مرسِلات متاحة على قناة واتساب في حساب Twilio</p>
+              )}
+              <p className="text-xs text-muted-foreground">سيتم تعبئة الحقول تلقائيًا: رقم الواتساب وSender SID وWABA ID</p>
+            </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">

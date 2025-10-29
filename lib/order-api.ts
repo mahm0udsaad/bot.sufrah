@@ -25,6 +25,9 @@ interface RestaurantProfile {
   name: string
   address: string
   phone: string
+  // Optional branding/link fields to align with dashboard profile
+  appsLink?: string | null
+  sloganPhoto?: string | null
   branches: Array<{
     id: string
     name: string

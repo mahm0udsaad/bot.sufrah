@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { MessageSquare, Package, Clock, TrendingUp, AlertTriangle, CheckCircle, Loader2, RefreshCw } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts"
 import { useI18n } from "@/hooks/use-i18n"
 import type { DashboardOverview as DashboardOverviewData } from "@/lib/dashboard-api"
@@ -121,8 +122,17 @@ export function DashboardOverview({ overview, error, restaurantName }: Dashboard
             <MessageSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{overview?.activeConversations || 0}</div>
-            <p className="text-xs text-muted-foreground">{t("dashboard.overview.stats.activeChats.description")}</p>
+            {!overview ? (
+              <>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-4 w-24" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{overview.activeConversations || 0}</div>
+                <p className="text-xs text-muted-foreground">{t("dashboard.overview.stats.activeChats.description")}</p>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -131,8 +141,17 @@ export function DashboardOverview({ overview, error, restaurantName }: Dashboard
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{overview?.recentActivity?.ordersLast24h || 0}</div>
-            <p className="text-xs text-muted-foreground">{t("dashboard.overview.stats.ordersToday.description")}</p>
+            {!overview ? (
+              <>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-4 w-24" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{overview.recentActivity?.ordersLast24h || 0}</div>
+                <p className="text-xs text-muted-foreground">{t("dashboard.overview.stats.ordersToday.description")}</p>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -141,8 +160,17 @@ export function DashboardOverview({ overview, error, restaurantName }: Dashboard
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{overview?.recentActivity?.messagesLast24h || 0}</div>
-            <p className="text-xs text-muted-foreground">{t("dashboard.overview.stats.messagesToday.description")}</p>
+            {!overview ? (
+              <>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-4 w-24" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{overview.recentActivity?.messagesLast24h || 0}</div>
+                <p className="text-xs text-muted-foreground">{t("dashboard.overview.stats.messagesToday.description")}</p>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -155,10 +183,19 @@ export function DashboardOverview({ overview, error, restaurantName }: Dashboard
             )}
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{overview?.slaBreaches || 0}</div>
-                        <p className="text-xs text-muted-foreground">
-                          {overview?.slaBreaches ? t("dashboard.overview.stats.slaBreaches.warning") : t("dashboard.overview.stats.slaBreaches.ok")}
-                        </p>
+            {!overview ? (
+              <>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-4 w-24" />
+              </>
+            ) : (
+              <>
+                <div className="text-2xl font-bold">{overview.slaBreaches || 0}</div>
+                <p className="text-xs text-muted-foreground">
+                  {overview.slaBreaches ? t("dashboard.overview.stats.slaBreaches.warning") : t("dashboard.overview.stats.slaBreaches.ok")}
+                </p>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -173,30 +210,42 @@ export function DashboardOverview({ overview, error, restaurantName }: Dashboard
               </Button>
             </CardTitle>
             <CardDescription>
-              {t("dashboard.overview.usage.summary", {
-                values: {
-                  used: messagesUsed.toLocaleString(),
-                  limit: messagesLimit.toLocaleString(),
-                },
-              })}
+              {!overview ? (
+                <Skeleton className="h-4 w-48" />
+              ) : (
+                t("dashboard.overview.usage.summary", {
+                  values: {
+                    used: messagesUsed.toLocaleString(),
+                    limit: messagesLimit.toLocaleString(),
+                  },
+                })
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between text-sm">
-                <span>{t("dashboard.overview.usage.currentCycle")}</span>
-                <span className="font-medium">{usagePercentageLabel}%</span>
+            {!overview ? (
+              <div className="space-y-4">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-2 w-full" />
+                <Skeleton className="h-4 w-full" />
               </div>
-              <Progress value={usagePercentage} className="h-2" />
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <span>{t("dashboard.overview.usage.resets", { values: { days: daysUntilReset } })}</span>
-                <span>
-                  {t("dashboard.overview.usage.remaining", {
-                    values: { count: messagesRemaining.toLocaleString() },
-                  })}
-                </span>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between text-sm">
+                  <span>{t("dashboard.overview.usage.currentCycle")}</span>
+                  <span className="font-medium">{usagePercentageLabel}%</span>
+                </div>
+                <Progress value={usagePercentage} className="h-2" />
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <span>{t("dashboard.overview.usage.resets", { values: { days: daysUntilReset } })}</span>
+                  <span>
+                    {t("dashboard.overview.usage.remaining", {
+                      values: { count: messagesRemaining.toLocaleString() },
+                    })}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
           </CardContent>
         </Card>
 
@@ -208,22 +257,32 @@ export function DashboardOverview({ overview, error, restaurantName }: Dashboard
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">{t("dashboard.overview.windows.activeConversations")}</span>
-              <Badge variant="secondary">
-                {overview?.activeConversations || 0} / {(overview?.recentActivity?.conversationsLast24h || 0) + 5}
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">{t("dashboard.overview.windows.pendingOrders")}</span>
-              <Badge variant="secondary">{overview?.pendingOrders || 0}</Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">{t("dashboard.overview.windows.sla")}</span>
-              <Badge variant={overview?.slaBreaches ? "destructive" : "secondary"}>
-                {overview?.slaBreaches || 0} {t("dashboard.overview.windows.breaches")}
-              </Badge>
-            </div>
+            {!overview ? (
+              <>
+                <Skeleton className="h-6 w-full" />
+                <Skeleton className="h-6 w-full" />
+                <Skeleton className="h-6 w-full" />
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">{t("dashboard.overview.windows.activeConversations")}</span>
+                  <Badge variant="secondary">
+                    {overview.activeConversations || 0} / {(overview.recentActivity?.conversationsLast24h || 0) + 5}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">{t("dashboard.overview.windows.pendingOrders")}</span>
+                  <Badge variant="secondary">{overview.pendingOrders || 0}</Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">{t("dashboard.overview.windows.sla")}</span>
+                  <Badge variant={overview.slaBreaches ? "destructive" : "secondary"}>
+                    {overview.slaBreaches || 0} {t("dashboard.overview.windows.breaches")}
+                  </Badge>
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

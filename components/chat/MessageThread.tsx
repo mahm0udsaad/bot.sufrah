@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils"
 import { format, isToday, isYesterday } from "date-fns"
 import { ar } from "date-fns/locale"
 import { toast } from "sonner"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface BotConversation {
   id: string
@@ -67,9 +68,22 @@ interface MessageThreadProps {
   sending: boolean
   onSendMessage: (text: string) => void
   onSendMedia?: (file: File, caption?: string) => Promise<void>
+  onLoadOlder?: () => Promise<void>
+  loadingOlder?: boolean
+  hasMoreMessages?: boolean
 }
 
-export function MessageThread({ conversation, messages, loading, sending, onSendMessage, onSendMedia }: MessageThreadProps) {
+export function MessageThread({ 
+  conversation, 
+  messages, 
+  loading, 
+  sending, 
+  onSendMessage, 
+  onSendMedia,
+  onLoadOlder,
+  loadingOlder = false,
+  hasMoreMessages = true
+}: MessageThreadProps) {
   const [messageText, setMessageText] = useState("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -81,6 +95,7 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
   const previousMessageIdsRef = useRef<Set<string>>(new Set())
   const emojiButtonRef = useRef<HTMLButtonElement>(null)
   const [isEmojiOpen, setIsEmojiOpen] = useState(false)
+  const messagesStartRef = useRef<HTMLDivElement>(null)
 
   // Detect new messages and trigger animations
   useEffect(() => {
@@ -122,6 +137,24 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
       messagesEndRef.current?.scrollIntoView({ behavior: "auto" })
     }, 100)
   }, [conversation.id])
+
+  // Detect scroll to top for infinite scroll
+  useEffect(() => {
+    if (!onLoadOlder) return
+    
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      // Load more when scrolled near top (within 200px)
+      if (container.scrollTop < 200 && hasMoreMessages && !loadingOlder) {
+        onLoadOlder()
+      }
+    }
+
+    container.addEventListener("scroll", handleScroll)
+    return () => container.removeEventListener("scroll", handleScroll)
+  }, [onLoadOlder, hasMoreMessages, loadingOlder])
 
   const handleSend = async () => {
     if (uploading) return
@@ -218,14 +251,33 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
     setSelectedFile(null)
   }
 
-  const formatMessageTime = (timestamp: string) => {
+  // Helper to safely parse dates
+  const safeParseDate = (timestamp: string): Date => {
+    if (!timestamp) {
+      return new Date()
+    }
     const date = new Date(timestamp)
-    if (isToday(date)) {
-      return format(date, "HH:mm", { locale: ar })
-    } else if (isYesterday(date)) {
-      return `أمس ${format(date, "HH:mm", { locale: ar })}`
-    } else {
-      return format(date, "dd MMM HH:mm", { locale: ar })
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      // Return current date as fallback
+      return new Date()
+    }
+    return date
+  }
+
+  const formatMessageTime = (timestamp: string) => {
+    try {
+      const date = safeParseDate(timestamp)
+      if (isToday(date)) {
+        return format(date, "HH:mm", { locale: ar })
+      } else if (isYesterday(date)) {
+        return `أمس ${format(date, "HH:mm", { locale: ar })}`
+      } else {
+        return format(date, "dd MMM HH:mm", { locale: ar })
+      }
+    } catch (error) {
+      // Fallback for invalid timestamps
+      return "--:--"
     }
   }
 
@@ -477,19 +529,29 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
 
   // Group messages by date
   const groupedMessages = messages.reduce((groups, message) => {
-    const date = format(new Date(message.timestamp), "yyyy-MM-dd")
-    if (!groups[date]) {
-      groups[date] = []
+    try {
+      const date = safeParseDate(message.timestamp)
+      const dateKey = format(date, "yyyy-MM-dd")
+      if (!groups[dateKey]) {
+        groups[dateKey] = []
+      }
+      groups[dateKey].push(message)
+    } catch (error) {
+      // Skip messages with invalid timestamps
+      console.warn("Invalid timestamp for message:", message.id, message.timestamp)
     }
-    groups[date].push(message)
     return groups
   }, {} as Record<string, BotMessage[]>)
 
   const formatDateHeader = (dateStr: string) => {
-    const date = new Date(dateStr)
-    if (isToday(date)) return "اليوم"
-    if (isYesterday(date)) return "أمس"
-    return format(date, "dd MMMM yyyy", { locale: ar })
+    try {
+      const date = safeParseDate(dateStr)
+      if (isToday(date)) return "اليوم"
+      if (isYesterday(date)) return "أمس"
+      return format(date, "dd MMMM yyyy", { locale: ar })
+    } catch (error) {
+      return dateStr // Fallback to original string
+    }
   }
 
   return (
@@ -507,11 +569,27 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
         }}
       >
         {loading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="bg-white rounded-2xl shadow-lg px-6 py-4 flex items-center gap-3">
-              <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
-              <span className="text-gray-700 font-medium">جاري تحميل الرسائل...</span>
-            </div>
+          <div className="space-y-6">
+            {/* Skeleton loaders for messages */}
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex gap-2 items-end" style={{ 
+                justifyContent: i % 2 === 0 ? "flex-start" : "flex-end" 
+              }}>
+                {i % 2 === 0 && (
+                  <Skeleton className="w-8 h-8 rounded-full flex-shrink-0" />
+                )}
+                <Skeleton className={cn(
+                  "rounded-xl px-3 py-2",
+                  i % 2 === 0 ? "bg-white max-w-[75%]" : "bg-indigo-100 max-w-[75%]"
+                )}>
+                  <Skeleton className="h-4 w-32 mb-2" />
+                  <Skeleton className="h-3 w-16" />
+                </Skeleton>
+                {i % 2 !== 0 && (
+                  <Skeleton className="w-8 h-8 rounded-full flex-shrink-0" />
+                )}
+              </div>
+            ))}
           </div>
         ) : messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
@@ -525,6 +603,25 @@ export function MessageThread({ conversation, messages, loading, sending, onSend
           </div>
         ) : (
           <div className="space-y-6">
+            {/* Load older messages indicator */}
+            {hasMoreMessages && onLoadOlder && (
+              <div ref={messagesStartRef} className="flex items-center justify-center py-2">
+                {loadingOlder ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>جاري تحميل الرسائل السابقة...</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={onLoadOlder}
+                    className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                  >
+                    تحميل الرسائل السابقة
+                  </button>
+                )}
+              </div>
+            )}
+            
             {Object.entries(groupedMessages).map(([date, msgs]) => (
               <div key={date} className="space-y-3">
                 {/* Date separator */}

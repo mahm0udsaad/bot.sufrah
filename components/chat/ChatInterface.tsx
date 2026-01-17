@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
 import { ar } from "date-fns/locale"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface BotMessage {
   id: string
@@ -70,26 +71,71 @@ export function ChatInterface() {
   const [togglingBot, setTogglingBot] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [optimisticBotStates, setOptimisticBotStates] = useState<Record<string, boolean>>({})
+  const [restaurantName, setRestaurantName] = useState<string | null>(null)
+  const [loadingRestaurant, setLoadingRestaurant] = useState(true)
+  const [optimisticUnreadCounts, setOptimisticUnreadCounts] = useState<Record<string, number>>({})
+  const [loadingOlderMessages, setLoadingOlderMessages] = useState<Record<string, boolean>>({})
+  const [hasMoreMessages, setHasMoreMessages] = useState<Record<string, boolean>>({})
   const isInitializedRef = useRef(false)
   const processedMessageIds = useRef<Set<string>>(new Set())
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const previousMessageCountRef = useRef<Record<string, number>>({})
 
-  // Load messages for selected conversation
-  const loadConversationMessages = async (conversationId: string) => {
-    if (messages[conversationId] && messages[conversationId].length > 0) {
-      return
-    }
+  const normalizeFetchedMessage = (message: any): BotMessage => {
+    const rawDirection = (message.direction || message.sender_type || "OUT").toString().trim().toUpperCase()
+    const isFromCustomer =
+      typeof message.is_from_customer === "boolean"
+        ? message.is_from_customer
+        : ["IN", "INBOUND", "CUSTOMER"].includes(rawDirection)
 
+    return {
+      id: message.id,
+      conversation_id: message.conversation_id ?? message.conversationId,
+      from_phone: message.from_phone ?? message.fromPhone ?? "",
+      to_phone: message.to_phone ?? message.toPhone ?? "",
+      message_type:
+        message.message_type ??
+        message.messageType ??
+        (message.templatePreview || message.template_preview ? "template" : (message.media_url || message.mediaUrl ? "document" : "text")),
+      content: message.content ?? message.body ?? "",
+      original_content: message.original_content ?? message.originalContent ?? undefined,
+      media_url: message.media_url ?? message.mediaUrl ?? null,
+      timestamp: message.timestamp ?? message.createdAt ?? new Date().toISOString(),
+      is_from_customer: isFromCustomer,
+      content_sid: message.content_sid ?? message.contentSid,
+      variables: message.variables ?? undefined,
+      template_preview: message.template_preview ?? message.templatePreview ?? undefined,
+    }
+  }
+
+  // Load messages for selected conversation with pagination
+  const loadConversationMessages = async (conversationId: string, limit = 10) => {
+    // Always load fresh messages when opening a conversation
     setLoadingMessages(true)
+    setHasMoreMessages(prev => ({ ...prev, [conversationId]: true }))
     try {
-      const fetchedMessages = await fetchMessages(conversationId)
+      // Fetch last N messages (newest first, then reverse)
+      const res = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages/db?limit=${limit}`, {
+        cache: "no-store"
+      })
       
-      fetchedMessages.forEach(msg => processedMessageIds.current.add(msg.id))
+      if (!res.ok) {
+        throw new Error("Failed to fetch messages")
+      }
+      
+      const payload = await res.json()
+      const fetchedMessages: BotMessage[] = (payload.messages || []).map(normalizeFetchedMessage)
+      
+      // If we got fewer messages than requested, there are no more
+      if (fetchedMessages.length < limit) {
+        setHasMoreMessages(prev => ({ ...prev, [conversationId]: false }))
+      }
+      
+      fetchedMessages.forEach((msg: BotMessage) => processedMessageIds.current.add(msg.id))
       
       setMessages((prev) => ({
         ...prev,
-        [conversationId]: fetchedMessages.sort((a, b) => 
+        [conversationId]: fetchedMessages.sort((a: BotMessage, b: BotMessage) => 
           new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
         ),
       }))
@@ -100,11 +146,88 @@ export function ChatInterface() {
     }
   }
 
+  // Load older messages for infinite scroll
+  const loadOlderMessages = async (conversationId: string) => {
+    const currentMessages = messages[conversationId] || []
+    if (currentMessages.length === 0 || loadingOlderMessages[conversationId]) return
+
+    const oldestMessage = currentMessages[0]
+    if (!oldestMessage) return
+
+    setLoadingOlderMessages(prev => ({ ...prev, [conversationId]: true }))
+    try {
+      const beforeDate = new Date(oldestMessage.timestamp)
+      const res = await fetch(
+        `/api/conversations/${encodeURIComponent(conversationId)}/messages/db?limit=20&before=${beforeDate.toISOString()}`,
+        { cache: "no-store" }
+      )
+
+      if (!res.ok) {
+        throw new Error("Failed to load older messages")
+      }
+
+      const payload = await res.json()
+      const olderMessages: BotMessage[] = (payload.messages || []).map(normalizeFetchedMessage)
+
+      if (olderMessages.length === 0) {
+        setHasMoreMessages(prev => ({ ...prev, [conversationId]: false }))
+        return
+      }
+
+      // Merge with existing messages (prepend older messages)
+      setMessages((prev) => {
+        const existingMessages = prev[conversationId] || []
+        const existingIds = new Set(existingMessages.map((m: BotMessage) => m.id))
+        const newMessages = olderMessages.filter((m: BotMessage) => !existingIds.has(m.id))
+        const merged = [...newMessages, ...existingMessages]
+        return {
+          ...prev,
+          [conversationId]: merged.sort((a, b) => 
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          ),
+        }
+      })
+    } catch (err) {
+      console.error("Failed to load older messages:", err)
+    } finally {
+      setLoadingOlderMessages(prev => ({ ...prev, [conversationId]: false }))
+    }
+  }
+
+  // Mark conversation as read
+  const markConversationAsRead = async (conversationId: string) => {
+    try {
+      // Optimistically update UI
+      setOptimisticUnreadCounts(prev => ({ ...prev, [conversationId]: 0 }))
+      
+      // Update backend
+      await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/mark-read`, {
+        method: "POST",
+        cache: "no-store"
+      })
+      
+      // Refresh conversations to sync with backend
+      await fetchConversations()
+    } catch (err) {
+      console.error("Failed to mark conversation as read:", err)
+      // Revert optimistic update on error
+      setOptimisticUnreadCounts(prev => {
+        const { [conversationId]: _, ...rest } = prev
+        return rest
+      })
+    }
+  }
+
   // Handle conversation selection
-  const handleSelectConversation = (conversationId: string) => {
+  const handleSelectConversation = async (conversationId: string) => {
     setSelectedConversationId(conversationId)
     setShowMobileMessages(true)
-    loadConversationMessages(conversationId)
+    
+    // Mark as read immediately
+    await markConversationAsRead(conversationId)
+    
+    // Load last 10 messages
+    await loadConversationMessages(conversationId, 10)
   }
 
   // Handle back to conversation list on mobile
@@ -292,6 +415,24 @@ export function ChatInterface() {
     return unsubscribe
   }, [subscribeToConversationUpdates])
 
+  // Load restaurant name for filtering confidential conversations
+  useEffect(() => {
+    const loadRestaurant = async () => {
+      try {
+        const res = await fetch("/api/restaurant/profile", { cache: "no-store" })
+        if (res.ok) {
+          const restaurant = await res.json()
+          setRestaurantName(restaurant.name || null)
+        }
+      } catch (err) {
+        console.error("Failed to load restaurant:", err)
+      } finally {
+        setLoadingRestaurant(false)
+      }
+    }
+    loadRestaurant()
+  }, [])
+
   // Initial sync with REST API
   useEffect(() => {
     if (isInitializedRef.current) return
@@ -319,10 +460,22 @@ export function ChatInterface() {
     return conv?.is_bot_active || false
   }
   
-  const filteredConversations = conversations.filter(conv => 
-    conv.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    conv.customer_phone.includes(searchQuery)
-  )
+  // Filter conversations: exclude confidential ones (where customer_name matches restaurant name)
+  // and apply search query
+  const filteredConversations = conversations.filter(conv => {
+    // Exclude confidential conversations (restaurant name matches customer name)
+    if (restaurantName && conv.customer_name && 
+        conv.customer_name.toLowerCase().trim() === restaurantName.toLowerCase().trim()) {
+      return false
+    }
+    
+    // Apply search filter
+    const query = searchQuery.toLowerCase()
+    return (
+      conv.customer_name?.toLowerCase().includes(query) ||
+      conv.customer_phone.includes(query)
+    )
+  })
 
   const formatTimeAgo = (timestamp: string) => {
     try {
@@ -332,11 +485,22 @@ export function ChatInterface() {
     }
   }
 
-  // Get statistics for header
+  // Get statistics for header (excluding confidential conversations)
+  const visibleConversations = conversations.filter(conv => {
+    if (restaurantName && conv.customer_name && 
+        conv.customer_name.toLowerCase().trim() === restaurantName.toLowerCase().trim()) {
+      return false
+    }
+    return true
+  })
+  
   const stats = {
-    total: conversations.length,
-    unread: conversations.reduce((sum, conv) => sum + (conv.unread_count || 0), 0),
-    active: conversations.filter(c => c.is_bot_active).length,
+    total: visibleConversations.length,
+    unread: visibleConversations.reduce((sum, conv) => {
+      const unread = optimisticUnreadCounts[conv.id] ?? conv.unread_count ?? 0
+      return sum + Math.max(0, unread)
+    }, 0),
+    active: visibleConversations.filter(c => c.is_bot_active).length,
   }
 
   return (
@@ -389,15 +553,27 @@ export function ChatInterface() {
           <div className="flex gap-2">
             <div className="flex-1 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
               <div className="text-white/70 text-[10px] font-medium">الإجمالي</div>
-              <div className="text-white text-lg font-bold">{stats.total}</div>
+              {loadingRestaurant ? (
+                <Skeleton className="h-6 w-8 bg-white/20" />
+              ) : (
+                <div className="text-white text-lg font-bold">{stats.total}</div>
+              )}
             </div>
             <div className="flex-1 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
               <div className="text-white/70 text-[10px] font-medium">غير مقروء</div>
-              <div className="text-white text-lg font-bold">{stats.unread}</div>
+              {loadingRestaurant ? (
+                <Skeleton className="h-6 w-8 bg-white/20" />
+              ) : (
+                <div className="text-white text-lg font-bold">{stats.unread}</div>
+              )}
             </div>
             <div className="flex-1 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
               <div className="text-white/70 text-[10px] font-medium">بوت نشط</div>
-              <div className="text-white text-lg font-bold">{stats.active}</div>
+              {loadingRestaurant ? (
+                <Skeleton className="h-6 w-8 bg-white/20" />
+              ) : (
+                <div className="text-white text-lg font-bold">{stats.active}</div>
+              )}
             </div>
           </div>
         </div>
@@ -417,7 +593,25 @@ export function ChatInterface() {
 
         {/* Conversation List with enhanced styling - Scrollable */}
         <div className="flex-1 overflow-y-auto min-h-0">
-          {filteredConversations.length === 0 ? (
+          {loadingRestaurant || conversations.length === 0 ? (
+            <div className="divide-y divide-gray-100">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="p-4">
+                  <div className="flex items-start gap-3">
+                    <Skeleton className="w-12 h-12 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
+                      <div className="flex items-center gap-2">
+                        <Skeleton className="h-5 w-16 rounded-full" />
+                        <Skeleton className="h-5 w-20 rounded-full" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredConversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-6 text-center">
               <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center mb-4">
                 <MessageCircle className="w-12 h-12 text-gray-400" />
@@ -431,7 +625,8 @@ export function ChatInterface() {
             <div className="divide-y divide-gray-100">
               {filteredConversations.map((conversation) => {
                 const isSelected = selectedConversationId === conversation.id
-                const hasUnread = (conversation.unread_count || 0) > 0
+                const unreadCount = optimisticUnreadCounts[conversation.id] ?? conversation.unread_count ?? 0
+                const hasUnread = unreadCount > 0
                 
                 return (
                   <button
@@ -483,7 +678,7 @@ export function ChatInterface() {
                             )}
                             {hasUnread && (
                               <div className="bg-indigo-600 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
-                                {conversation.unread_count}
+                                {unreadCount}
                               </div>
                             )}
                           </div>
@@ -634,6 +829,9 @@ export function ChatInterface() {
                 sending={sendingMessage}
                 onSendMessage={handleSendMessage}
                 onSendMedia={handleSendMedia}
+                onLoadOlder={() => loadOlderMessages(selectedConversation.id)}
+                loadingOlder={loadingOlderMessages[selectedConversation.id] || false}
+                hasMoreMessages={hasMoreMessages[selectedConversation.id] !== false}
               />
             </div>
             </>

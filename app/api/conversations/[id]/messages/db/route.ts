@@ -8,7 +8,7 @@ import { db } from "@/lib/db"
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const restaurant = await getAuthenticatedRestaurant(request)
@@ -16,15 +16,29 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized", messages: [] }, { status: 401 })
     }
 
+    const { id } = await params
     const { searchParams } = new URL(request.url)
     const limitNum = parseInt(searchParams.get("limit") || "100", 10)
+    const beforeParam = searchParams.get("before")
+    const beforeDate = beforeParam ? new Date(beforeParam) : undefined
 
-    // Read from prisma through our db helper
-    const rows = await db.listMessages(restaurant.id, params.id, isNaN(limitNum) ? 100 : limitNum)
+    // Verify restaurant owns this conversation
+    const conversation = await db.getConversation(restaurant.id, id)
+    if (!conversation) {
+      return NextResponse.json({ error: "Conversation not found", messages: [] }, { status: 404 })
+    }
+
+    // Pagination-friendly: newest page by default, older pages via `before`
+    const rows = await db.listMessagesPage(
+      id,
+      isNaN(limitNum) ? 100 : Math.min(Math.max(limitNum, 1), 200),
+      beforeDate && !isNaN(beforeDate.getTime()) ? beforeDate : undefined,
+    )
 
     return NextResponse.json({ messages: rows })
   } catch (error: any) {
-    console.error(`[conversations/${params.id}/messages/db] Failed to fetch messages:`, error)
+    const { id } = await params
+    console.error(`[conversations/${id}/messages/db] Failed to fetch messages:`, error)
     return NextResponse.json(
       { error: "فشل في جلب الرسائل - Failed to fetch messages", messages: [] },
       { status: 500 }

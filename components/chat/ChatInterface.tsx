@@ -13,13 +13,32 @@ import {
   Bot,
   MessageCircle,
   Users,
-  Loader2
+  Loader2,
+  Zap,
+  Shield,
+  X,
+  ScrollText,
+  Plus
 } from "lucide-react"
+import { 
+  Tooltip, 
+  TooltipContent, 
+  TooltipProvider, 
+  TooltipTrigger 
+} from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 import { toast } from "sonner"
 import { formatDistanceToNow } from "date-fns"
 import { ar } from "date-fns/locale"
 import { Skeleton } from "@/components/ui/skeleton"
+import { motion, AnimatePresence } from "framer-motion"
 
 interface BotMessage {
   id: string
@@ -507,341 +526,360 @@ export function ChatInterface() {
   }
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100" dir="rtl">
+    <div className="flex h-full w-full overflow-hidden bg-background" dir="rtl">
       {/* Left Sidebar - Conversation List */}
-      <div className={cn(
-        "w-full md:w-[380px] lg:w-[420px] bg-white flex flex-col shadow-xl border-l border-gray-200",
-        showMobileMessages && "hidden md:flex"
-      )}>
+      <motion.div 
+        initial={{ x: isRtl ? 20 : -20, opacity: 0 }}
+        animate={{ x: 0, opacity: 1 }}
+        className={cn(
+          "w-full md:w-[380px] lg:w-[420px] bg-card flex flex-col border-l border-border z-20",
+          showMobileMessages && "hidden md:flex"
+        )}
+      >
         {/* Modern Header with Stats - Fixed */}
-        <div className="flex-shrink-0 bg-gradient-to-r from-indigo-600 to-purple-600 px-5 py-4">
-          <div className="flex items-center justify-between mb-3">
+        <div className="flex-shrink-0 bg-primary px-5 py-6 text-primary-foreground shadow-lg">
+          <div className="flex items-center justify-between mb-5">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                <MessageCircle className="w-5 h-5 text-white" />
+              <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shadow-inner">
+                <MessageCircle className="w-6 h-6 text-white" />
               </div>
-        <div>
-                <h1 className="text-white text-lg font-semibold">المحادثات</h1>
-                <p className="text-white/80 text-xs">{stats.total} محادثة نشطة</p>
+              <div>
+                <h1 className="text-xl font-bold tracking-tight">المحادثات</h1>
+                <p className="text-white/70 text-xs font-medium">{stats.total} محادثة نشطة</p>
               </div>
             </div>
             
             {/* Bot Status Indicator */}
-            <div className="flex items-center gap-2">
-              <div className={cn(
-                "flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-sm",
-                stats.active > 0 
-                  ? "bg-green-500/20 border border-green-400/30" 
-                  : "bg-red-500/20 border border-red-400/30"
-              )}>
-                <div className={cn(
-                  "w-2 h-2 rounded-full animate-pulse",
-                  stats.active > 0 ? "bg-green-400" : "bg-red-400"
-                )} />
-                <Bot className={cn(
-                  "w-4 h-4",
-                  stats.active > 0 ? "text-green-100" : "text-red-100"
-                )} />
-                <span className={cn(
-                  "text-xs font-medium",
-                  stats.active > 0 ? "text-green-50" : "text-red-50"
-                )}>
-                  {stats.active > 0 ? "البوت نشط" : "البوت متوقف"}
-                </span>
-              </div>
-            </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className={cn(
+                    "flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md border",
+                    stats.active > 0 
+                      ? "bg-emerald-500/20 border-emerald-400/30" 
+                      : "bg-amber-500/20 border-amber-400/30"
+                  )}>
+                    <div className={cn(
+                      "w-2 h-2 rounded-full",
+                      stats.active > 0 ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                    )} />
+                    <Bot className="w-4 h-4 text-white" />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{stats.active > 0 ? "البوت نشط في " + stats.active + " محادثة" : "البوت متوقف حالياً"}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
 
-          {/* Stats Pills */}
+          {/* Stats Pills - Modern Glassmorphism */}
           <div className="flex gap-2">
-            <div className="flex-1 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-              <div className="text-white/70 text-[10px] font-medium">الإجمالي</div>
-              {loadingRestaurant ? (
-                <Skeleton className="h-6 w-8 bg-white/20" />
-              ) : (
-                <div className="text-white text-lg font-bold">{stats.total}</div>
-              )}
-            </div>
-            <div className="flex-1 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-              <div className="text-white/70 text-[10px] font-medium">غير مقروء</div>
-              {loadingRestaurant ? (
-                <Skeleton className="h-6 w-8 bg-white/20" />
-              ) : (
-                <div className="text-white text-lg font-bold">{stats.unread}</div>
-              )}
-            </div>
-            <div className="flex-1 bg-white/10 backdrop-blur-sm rounded-lg px-3 py-2 border border-white/20">
-              <div className="text-white/70 text-[10px] font-medium">بوت نشط</div>
-              {loadingRestaurant ? (
-                <Skeleton className="h-6 w-8 bg-white/20" />
-              ) : (
-                <div className="text-white text-lg font-bold">{stats.active}</div>
-              )}
-            </div>
+            {[
+              { label: "الإجمالي", value: stats.total },
+              { label: "غير مقروء", value: stats.unread, highlight: stats.unread > 0 },
+              { label: "بوت نشط", value: stats.active }
+            ].map((s, i) => (
+              <div key={i} className={cn(
+                "flex-1 bg-white/10 backdrop-blur-md rounded-xl px-3 py-2 border border-white/10 transition-all",
+                s.highlight && "bg-white/20 border-white/30"
+              )}>
+                <div className="text-white/60 text-[10px] font-bold uppercase tracking-wider">{s.label}</div>
+                <div className="text-white text-lg font-black mt-0.5">{loadingRestaurant ? "..." : s.value}</div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Enhanced Search - Fixed */}
-        <div className="flex-shrink-0 px-3 py-3 bg-gray-50 border-b border-gray-200">
-          <div className="relative">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 z-10" />
+        {/* Enhanced Search */}
+        <div className="flex-shrink-0 px-4 py-4 bg-background/50 backdrop-blur-sm border-b border-border">
+          <div className="relative group">
+            <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors z-10" />
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ابحث عن محادثة..."
-              className="w-full bg-white border-gray-200 text-gray-900 placeholder:text-gray-400 pr-10 h-10 rounded-xl focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:border-transparent shadow-sm"
+              placeholder="ابحث عن اسم العميل أو رقم الهاتف..."
+              className="w-full bg-muted/50 border-transparent text-foreground placeholder:text-muted-foreground pr-10 h-11 rounded-2xl focus-visible:ring-primary focus-visible:bg-background shadow-inner transition-all"
             />
           </div>
-      </div>
+        </div>
 
-        {/* Conversation List with enhanced styling - Scrollable */}
-        <div className="flex-1 overflow-y-auto min-h-0">
-          {loadingRestaurant || conversations.length === 0 ? (
-            <div className="divide-y divide-gray-100">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="p-4">
-                  <div className="flex items-start gap-3">
-                    <Skeleton className="w-12 h-12 rounded-full" />
-                    <div className="flex-1 space-y-2">
-                      <Skeleton className="h-4 w-3/4" />
-                      <Skeleton className="h-3 w-1/2" />
-                      <div className="flex items-center gap-2">
-                        <Skeleton className="h-5 w-16 rounded-full" />
-                        <Skeleton className="h-5 w-20 rounded-full" />
+        {/* Conversation List */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {loadingRestaurant || (conversations.length === 0 && loadingConversations) ? (
+            <div className="divide-y divide-border/50">
+              {[...Array(6)].map((_, i) => (
+                <div key={i} className="p-5">
+                  <div className="flex items-center gap-4">
+                    <Skeleton className="w-14 h-14 rounded-2xl flex-shrink-0" />
+                    <div className="flex-1 space-y-3">
+                      <div className="flex justify-between items-center">
+                        <Skeleton className="h-5 w-32 rounded-md" />
+                        <Skeleton className="h-3 w-12 rounded-md" />
                       </div>
+                      <Skeleton className="h-4 w-48 rounded-md" />
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           ) : filteredConversations.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full px-6 text-center">
-              <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center mb-4">
-                <MessageCircle className="w-12 h-12 text-gray-400" />
+            <div className="flex flex-col items-center justify-center h-full px-8 text-center animate-in fade-in zoom-in duration-500">
+              <div className="w-24 h-24 rounded-3xl bg-muted/50 flex items-center justify-center mb-6 shadow-inner">
+                <MessageCircle className="w-12 h-12 text-muted-foreground/50" />
               </div>
-              <h3 className="text-gray-900 font-semibold text-lg mb-2">لا توجد محادثات</h3>
-              <p className="text-gray-500 text-sm max-w-xs">
-                {searchQuery ? "لم يتم العثور على نتائج" : "ستظهر محادثاتك هنا عند بدء التواصل مع العملاء"}
+              <h3 className="text-foreground font-bold text-xl mb-2">لا توجد محادثات</h3>
+              <p className="text-muted-foreground text-sm max-w-xs leading-relaxed">
+                {searchQuery ? "لم يتم العثور على نتائج للبحث الحالي." : "ستظهر محادثاتك هنا عند بدء التواصل مع العملاء عبر واتساب."}
               </p>
+              {searchQuery && (
+                <Button variant="link" onClick={() => setSearchQuery("")} className="mt-2 text-primary">
+                  مسح البحث
+                </Button>
+              )}
             </div>
           ) : (
-            <div className="divide-y divide-gray-100">
-              {filteredConversations.map((conversation) => {
-                const isSelected = selectedConversationId === conversation.id
-                const unreadCount = optimisticUnreadCounts[conversation.id] ?? conversation.unread_count ?? 0
-                const hasUnread = unreadCount > 0
+            <div className="py-2">
+              <AnimatePresence initial={false}>
+                {filteredConversations.map((conversation) => {
+                  const isSelected = selectedConversationId === conversation.id
+                  const unreadCount = optimisticUnreadCounts[conversation.id] ?? conversation.unread_count ?? 0
+                  const hasUnread = unreadCount > 0
 
-                return (
-                  <button
-                    key={conversation.id}
-                    onClick={() => handleSelectConversation(conversation.id)}
-                    className={cn(
-                      "w-full p-4 text-right transition-all duration-200 hover:bg-gray-50 group relative",
-                      isSelected && "bg-indigo-50 hover:bg-indigo-50 border-r-4 border-indigo-600"
-                    )}
-                  >
-                    <div className="flex items-start gap-3">
-                      {/* Avatar with status indicator */}
-                      <div className="relative flex-shrink-0">
-                        <div className={cn(
-                          "w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-lg shadow-md",
-                          isSelected ? "bg-indigo-600" : "bg-gradient-to-br from-indigo-500 to-purple-500"
-                        )}>
-                          {conversation.customer_name?.charAt(0) || "؟"}
-                        </div>
-                        {/* Online status dot */}
-                        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white"></div>
-                      </div>
+                  return (
+                    <motion.button
+                      layout
+                      key={conversation.id}
+                      onClick={() => handleSelectConversation(conversation.id)}
+                      className={cn(
+                        "w-full px-4 py-3 text-right transition-all duration-300 relative group overflow-hidden",
+                        isSelected 
+                          ? "bg-primary/5 active:bg-primary/10" 
+                          : "hover:bg-muted/50 active:bg-muted"
+                      )}
+                    >
+                      {/* Selection Indicator */}
+                      {isSelected && (
+                        <motion.div 
+                          layoutId="active-pill"
+                          className="absolute right-0 top-3 bottom-3 w-1.5 bg-primary rounded-l-full z-10"
+                        />
+                      )}
 
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-1">
-                          <h3 className={cn(
-                            "font-semibold text-base truncate",
-                            hasUnread ? "text-gray-900" : "text-gray-700"
+                      <div className="flex items-center gap-4 relative z-0">
+                        {/* Avatar */}
+                        <div className="relative flex-shrink-0">
+                          <div className={cn(
+                            "w-14 h-14 rounded-2xl flex items-center justify-center text-white font-bold text-xl shadow-lg transition-transform duration-300 group-hover:scale-105",
+                            isSelected 
+                              ? "bg-primary shadow-primary/20 rotate-3" 
+                              : "bg-gradient-to-br from-indigo-500 to-purple-500 shadow-indigo-500/10"
                           )}>
-                            {conversation.customer_name || conversation.customer_phone}
-                          </h3>
-                          <span className="text-xs text-gray-500 whitespace-nowrap">
-                            {formatTimeAgo(conversation.last_message_at)}
-                          </span>
+                            {conversation.customer_name?.charAt(0) || "؟"}
+                          </div>
+                          {/* Bot Indicator Badge */}
+                          {conversation.is_bot_active && (
+                            <div className="absolute -top-1 -left-1 bg-emerald-500 text-white p-1 rounded-lg border-2 border-card shadow-sm">
+                              <Bot className="h-3 w-3" />
+                            </div>
+                          )}
+                          {/* Unread Badge Overlay */}
+                          {hasUnread && !isSelected && (
+                            <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-black rounded-full min-w-[20px] h-5 flex items-center justify-center px-1 border-2 border-card">
+                              {unreadCount}
+                            </div>
+                          )}
                         </div>
 
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm text-gray-500 truncate flex-1" dir="ltr">
-                            {conversation.customer_phone}
-                          </p>
+                        {/* Content */}
+                        <div className="flex-1 min-w-0 py-1">
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <h3 className={cn(
+                              "font-bold text-base truncate transition-colors",
+                              isSelected ? "text-primary" : (hasUnread ? "text-foreground" : "text-foreground/80")
+                            )}>
+                              {conversation.customer_name || conversation.customer_phone}
+                            </h3>
+                            <span className="text-[10px] font-semibold text-muted-foreground/70 uppercase">
+                              {formatTimeAgo(conversation.last_message_at)}
+                            </span>
+                          </div>
 
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            {conversation.is_bot_active && (
-                              <div className="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                                <Bot className="h-3 w-3" />
-                                <span className="text-[10px] font-medium">AI</span>
-                              </div>
-                            )}
-                            {hasUnread && (
-                              <div className="bg-indigo-600 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5">
-                                {unreadCount}
-                              </div>
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs text-muted-foreground/80 font-mono truncate" dir="ltr">
+                              {conversation.customer_phone}
+                            </p>
+                            
+                            {hasUnread && isSelected && (
+                              <Badge className="bg-primary text-primary-foreground text-[10px] font-bold h-5">
+                                {unreadCount} جديد
+                              </Badge>
                             )}
                           </div>
                         </div>
                       </div>
-                      </div>
+                    </motion.button>
+                  )
+                })}
+              </AnimatePresence>
 
-                    {/* Hover indicator */}
-                    <div className={cn(
-                      "absolute left-0 top-1/2 -translate-y-1/2 w-1 h-0 bg-indigo-600 rounded-r-full transition-all duration-200",
-                      !isSelected && "group-hover:h-8"
-                    )} />
-                  </button>
-                )
-              })}
-
-              {/* Load More Conversations */}
+              {/* Load More */}
               {hasMoreConversations && !searchQuery && (
-                <div className="p-3">
+                <div className="p-4 mt-2">
                   <Button
-                    variant="outline"
-                    className="w-full text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                    variant="ghost"
+                    className="w-full text-primary hover:bg-primary/5 hover:text-primary rounded-xl border border-dashed border-primary/20"
                     onClick={() => fetchMoreConversations()}
                     disabled={loadingConversations}
                   >
                     {loadingConversations ? (
                       <Loader2 className="h-4 w-4 animate-spin ml-2" />
-                    ) : null}
-                    {loadingConversations ? "جاري التحميل..." : "تحميل المزيد"}
+                    ) : (
+                      <Plus className="h-4 w-4 ml-2" />
+                    )}
+                    {loadingConversations ? "جاري التحميل..." : "تحميل المزيد من المحادثات"}
                   </Button>
                 </div>
               )}
             </div>
           )}
         </div>
-      </div>
+      </motion.div>
 
       {/* Right Side - Message Thread */}
       <div className={cn(
-        "flex-1 flex flex-col min-w-0",
+        "flex-1 flex flex-col min-w-0 bg-muted/30",
         !showMobileMessages && "hidden md:flex"
-        )}>
-          {selectedConversation ? (
-            <>
+      )}>
+        {selectedConversation ? (
+          <div className="flex flex-col h-full relative">
             {/* Enhanced Chat Header - Fixed */}
-            <div className="flex-shrink-0 h-[70px] bg-white px-6 flex items-center justify-between border-b border-gray-200 shadow-sm">
+            <header className="flex-shrink-0 h-[80px] bg-background/80 backdrop-blur-md px-6 flex items-center justify-between border-b border-border shadow-sm z-10">
               <div className="flex items-center gap-4 flex-1 min-w-0">
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={handleBackToConversations}
-                  className="md:hidden text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-full"
+                  className="md:hidden text-muted-foreground hover:bg-muted rounded-full"
                 >
                   <ArrowRight className="h-5 w-5" />
                 </Button>
 
                 {/* Avatar */}
-                <div className="relative">
-                  <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-semibold text-lg shadow-md">
+                <div className="relative group cursor-pointer">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-indigo-600 flex items-center justify-center text-white font-bold text-xl shadow-lg group-hover:shadow-primary/20 transition-all">
                     {selectedConversation.customer_name?.charAt(0) || "؟"}
                   </div>
-                  <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 rounded-lg border-2 border-background shadow-sm"></div>
                 </div>
 
                 {/* Name and Status */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5">
-                    <h2 className="text-gray-900 font-semibold text-base truncate">
+                    <h2 className="text-foreground font-bold text-lg truncate">
                       {selectedConversation.customer_name || selectedConversation.customer_phone}
                     </h2>
                     {getBotStatus(selectedConversation.id) && (
-                      <Badge className="bg-green-500 hover:bg-green-600 text-white text-[10px] px-2 py-0.5 h-5 gap-1 shadow-sm">
+                      <Badge className="bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 border-emerald-500/20 text-[10px] font-bold px-2 py-0.5 h-5 gap-1">
                         <Bot className="h-3 w-3" />
-                        نشط
-                    </Badge>
+                        الذكاء الاصطناعي نشط
+                      </Badge>
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-600 font-medium">متصل الآن</span>
-                    <span className="text-xs text-gray-400">•</span>
-                    <span className="text-xs text-gray-500" dir="ltr">
-                    {selectedConversation.customer_phone}
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50"></div>
+                      <span className="text-xs text-emerald-600 font-semibold tracking-wide uppercase">متصل</span>
+                    </div>
+                    <span className="text-muted-foreground/30 font-light">|</span>
+                    <span className="text-xs text-muted-foreground font-mono" dir="ltr">
+                      {selectedConversation.customer_phone}
                     </span>
                   </div>
                 </div>
-                </div>
+              </div>
                 
-              {/* Bot Toggle Button */}
+              {/* Actions Area */}
               <div className="flex items-center gap-3">
-                {getBotStatus(selectedConversation.id) ? (
-                  // Bot is Active - Show Stop Button
-                  <Button
-                    onClick={async () => {
-                      try {
-                        await handleToggleConversationBot(
-                          selectedConversation.id, 
-                          false
-                        )
-                      } catch (error) {
-                        console.error("Failed to toggle bot:", error)
-                      }
-                    }}
-                    disabled={togglingBot}
-                    className={cn(
-                      "h-10 px-4 shadow-md transition-all duration-200",
-                      "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white"
-                    )}
-                  >
-                    {togglingBot ? (
-                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
-                    ) : (
-                      <Bot className="h-4 w-4 ml-2" />
-                    )}
-                    <span className="font-medium">إيقاف البوت</span>
-                  </Button>
-                ) : (
-                  // Bot is Stopped - Show Prominent Activate Button
-                <Button
-                  onClick={async () => {
-                    try {
-                      await handleToggleConversationBot(
-                        selectedConversation.id, 
-                          true
-                      )
-                    } catch (error) {
-                      console.error("Failed to toggle bot:", error)
-                    }
-                  }}
-                  disabled={togglingBot}
-                    className={cn(
-                      "h-11 px-6 shadow-lg transition-all duration-200 border-2",
-                      "bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700",
-                      "text-white border-green-400 hover:shadow-green-500/50 hover:scale-105"
-                    )}
-                >
-                  {togglingBot ? (
-                      <>
-                        <Loader2 className="h-5 w-5 animate-spin ml-2" />
-                        <span className="font-bold">جاري التفعيل...</span>
-                      </>
+                <AnimatePresence mode="wait">
+                  {getBotStatus(selectedConversation.id) ? (
+                    <motion.div
+                      key="stop-bot"
+                      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                    >
+                      <Button
+                        onClick={async () => {
+                          try {
+                            await handleToggleConversationBot(selectedConversation.id, false)
+                          } catch (error) {}
+                        }}
+                        disabled={togglingBot}
+                        variant="outline"
+                        className="h-11 px-5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300 rounded-2xl shadow-sm transition-all font-bold gap-2"
+                      >
+                        {togglingBot ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
+                        <span>إيقاف البوت الذكي</span>
+                      </Button>
+                    </motion.div>
                   ) : (
-                    <>
-                        <Bot className="h-5 w-5 ml-2 animate-pulse" />
-                        <span className="font-bold text-base">تفعيل البوت الآن</span>
-                    </>
+                    <motion.div
+                      key="start-bot"
+                      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: -10 }}
+                    >
+                      <Button
+                        onClick={async () => {
+                          try {
+                            await handleToggleConversationBot(selectedConversation.id, true)
+                          } catch (error) {}
+                        }}
+                        disabled={togglingBot}
+                        className="h-11 px-6 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl shadow-lg shadow-primary/20 transition-all font-bold gap-2 border-b-4 border-primary/20 active:border-b-0 active:translate-y-1"
+                      >
+                        {togglingBot ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <div className="relative">
+                            <Bot className="h-5 w-5 animate-bounce" />
+                            <div className="absolute -top-1 -right-1 w-2 h-2 bg-white rounded-full animate-ping"></div>
+                          </div>
+                        )}
+                        <span>تفعيل البوت الذكي</span>
+                      </Button>
+                    </motion.div>
                   )}
-                  </Button>
-                )}
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-full h-10 w-10"
-                >
-                  <MoreVertical className="h-5 w-5" />
-                </Button>
+                </AnimatePresence>
+                
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="text-muted-foreground hover:bg-muted rounded-2xl h-11 w-11 transition-colors">
+                      <MoreVertical className="h-5 w-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56 rounded-2xl p-2 shadow-xl border-border">
+                    <DropdownMenuItem className="rounded-xl p-3 gap-3 cursor-pointer">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">تفاصيل العميل</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="rounded-xl p-3 gap-3 cursor-pointer">
+                      <ScrollText className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">سجل الطلبات</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="my-2" />
+                    <DropdownMenuItem className="rounded-xl p-3 gap-3 text-red-600 focus:text-red-600 focus:bg-red-50 cursor-pointer">
+                      <X className="h-4 w-4" />
+                      <span className="font-bold">إغلاق المحادثة</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
-              </div>
+            </header>
               
             {/* Messages - Takes remaining space */}
-            <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="flex-1 min-h-0 overflow-hidden relative">
               <MessageThread
                 conversation={selectedConversation}
                 messages={messages[selectedConversation.id] || []}
@@ -854,40 +892,54 @@ export function ChatInterface() {
                 hasMoreMessages={hasMoreMessages[selectedConversation.id] !== false}
               />
             </div>
-            </>
-          ) : (
+          </div>
+        ) : (
           /* Enhanced Empty State */
-          <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-            <div className="text-center max-w-md px-6">
-              <div className="relative mb-8">
-                <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-2xl">
-                  <MessageCircle className="w-16 h-16 text-white" />
+          <div className="flex-1 flex items-center justify-center bg-muted/20 relative overflow-hidden p-8">
+            {/* Background Decorations */}
+            <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-primary/5 rounded-full blur-3xl animate-pulse"></div>
+            <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl animate-pulse delay-700"></div>
+            
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-center max-w-lg relative z-10"
+            >
+              <div className="relative mb-10 inline-block">
+                <div className="w-40 h-40 mx-auto rounded-[40px] bg-gradient-to-br from-primary to-indigo-700 flex items-center justify-center shadow-2xl shadow-primary/30 rotate-3">
+                  <MessageCircle className="w-20 h-20 text-white -rotate-3" />
                 </div>
-                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-white rounded-full px-4 py-1.5 shadow-lg border border-gray-200">
-                  <span className="text-xs font-medium text-indigo-600">Sufrah Chat</span>
-                </div>
+                <motion.div 
+                  animate={{ y: [0, -10, 0] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute -bottom-4 -right-4 bg-background border border-border rounded-2xl px-5 py-3 shadow-xl flex items-center gap-3"
+                >
+                  <div className="h-3 w-3 rounded-full bg-emerald-500 animate-pulse"></div>
+                  <span className="text-xs font-black text-foreground uppercase tracking-wider">نظام سفره المتكامل</span>
+                </motion.div>
               </div>
-              <h3 className="text-gray-900 text-2xl font-bold mb-3">واتساب للأعمال</h3>
-              <p className="text-gray-600 text-sm leading-relaxed mb-6">
-                اختر محادثة من القائمة لبدء المراسلة مع عملائك
+              <h3 className="text-foreground text-3xl font-black mb-4 tracking-tight">مركز إدارة المحادثات</h3>
+              <p className="text-muted-foreground text-lg leading-relaxed mb-10 max-w-md mx-auto">
+                قم باختيار محادثة من القائمة الجانبية للبدء في الرد على استفسارات عملائك أو إدارة طلباتهم عبر واتساب.
               </p>
-              <div className="flex items-center justify-center gap-6 text-xs text-gray-500">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-500"></div>
-                  <span>متصل</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Bot className="w-3.5 h-3.5" />
-                  <span>بوت ذكي</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Users className="w-3.5 h-3.5" />
-                  <span>{stats.total} محادثة</span>
-                </div>
+              
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { icon: Zap, label: "استجابة سريعة", color: "text-amber-500", bg: "bg-amber-50" },
+                  { icon: Bot, label: "ذكاء اصطناعي", color: "text-emerald-500", bg: "bg-emerald-50" },
+                  { icon: Shield, label: "آمن وموثوق", color: "text-blue-500", bg: "bg-blue-50" }
+                ].map((feature, i) => (
+                  <div key={i} className="flex flex-col items-center gap-2 p-4 rounded-3xl bg-background border border-border shadow-sm">
+                    <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center", feature.bg)}>
+                      <feature.icon className={cn("w-5 h-5", feature.color)} />
+                    </div>
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase">{feature.label}</span>
+                  </div>
+                ))}
               </div>
-              </div>
-            </div>
-          )}
+            </motion.div>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -97,12 +97,15 @@ interface BotWebSocketContextValue {
   error: string | null
   botEnabled: boolean
   conversations: BotConversation[]
+  hasMoreConversations: boolean
+  loadingConversations: boolean
   subscribeToBootstrap: (handler: BootstrapHandler) => () => void
   subscribeToMessages: (handler: MessageHandler) => () => void
   subscribeToConversationUpdates: (handler: ConversationHandler) => () => void
   subscribeToStatusUpdates: (handler: StatusHandler) => () => void
   subscribeToOrderEvents: (handler: OrderHandler) => () => void
   fetchConversations: () => Promise<BotConversation[]>
+  fetchMoreConversations: () => Promise<BotConversation[]>
   fetchMessages: (conversationId: string) => Promise<BotMessage[]>
   sendMessage: (conversationId: string, message: string) => Promise<BotMessage>
   sendMedia: (conversationId: string, fileOrUrl: File | string, caption?: string) => Promise<BotMessage>
@@ -143,7 +146,11 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [botEnabled, setBotEnabled] = useState(false)
   const [conversations, setConversations] = useState<BotConversation[]>([])
-  
+  const [hasMoreConversations, setHasMoreConversations] = useState(true)
+  const [loadingConversations, setLoadingConversations] = useState(false)
+  const conversationOffsetRef = useRef(0)
+  const CONVERSATIONS_PAGE_SIZE = 50
+
   const socketRef = useRef<WebSocket | null>(null)
   const retryAttemptRef = useRef(0)
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -402,46 +409,64 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timeout)
   }, [])
 
-  // REST API methods - ✅ USE DATABASE-BACKED ENDPOINTS
-  const fetchConversations = async (): Promise<BotConversation[]> => {
-    // Fetch from database-backed API to ensure data persists across restarts
-    const res = await fetch(`/api/conversations/db`, { cache: "no-store" })
+  const normalizeConversationData = (c: any): BotConversation => ({
+    id: c.id,
+    customer_phone: c.customer_phone ?? c.customerPhone ?? c.customerWa ?? "",
+    customer_name: c.customer_name ?? c.customerName ?? null,
+    status: (c.status ?? "active").toString().toLowerCase(),
+    last_message_at: c.last_message_at ?? c.lastMessageAt ?? new Date().toISOString(),
+    unread_count: c.unread_count ?? c.unreadCount ?? 0,
+    is_bot_active: c.is_bot_active ?? c.isBotActive ?? true,
+  })
+
+  const fetchConversationsPage = async (offset: number, limit: number): Promise<BotConversation[]> => {
+    const res = await fetch(`/api/conversations/db?offset=${offset}&limit=${limit}`, { cache: "no-store" })
     if (!res.ok) {
-      // Fallback to old endpoint if new one not available yet
       console.warn("Database-backed API not available, trying legacy endpoint")
-      const fallbackRes = await fetch(`/api/conversations`, { cache: "no-store" })
+      const fallbackRes = await fetch(`/api/conversations?take=${limit}`, { cache: "no-store" })
       if (!fallbackRes.ok) {
         throw new Error("Failed to fetch conversations")
       }
       const fallbackPayload = await fallbackRes.json()
       const fallbackList: any[] = fallbackPayload.conversations || fallbackPayload || []
-      const normalizedFallback = fallbackList.map((c) => ({
-        id: c.id,
-        customer_phone: c.customer_phone ?? c.customerPhone ?? c.customerWa ?? "",
-        customer_name: c.customer_name ?? c.customerName ?? null,
-        status: (c.status ?? "active").toString().toLowerCase(),
-        last_message_at: c.last_message_at ?? c.lastMessageAt ?? new Date().toISOString(),
-        unread_count: c.unread_count ?? c.unreadCount ?? 0,
-        is_bot_active: c.is_bot_active ?? c.isBotActive ?? true,
-      }))
-      const deduplicated = deduplicateConversationsByPhone(normalizedFallback)
-      setConversations(deduplicated)
-      return deduplicated
+      return fallbackList.map(normalizeConversationData)
     }
     const payload = await res.json()
     const list: any[] = payload.conversations || payload || []
-    const normalized = list.map((c) => ({
-      id: c.id,
-      customer_phone: c.customer_phone ?? c.customerPhone ?? c.customerWa ?? "",
-      customer_name: c.customer_name ?? c.customerName ?? null,
-      status: (c.status ?? "active").toString().toLowerCase(),
-      last_message_at: c.last_message_at ?? c.lastMessageAt ?? new Date().toISOString(),
-      unread_count: c.unread_count ?? c.unreadCount ?? 0,
-      is_bot_active: c.is_bot_active ?? c.isBotActive ?? true,
-    }))
-    const deduplicated = deduplicateConversationsByPhone(normalized)
-    setConversations(deduplicated)
-    return deduplicated
+    return list.map(normalizeConversationData)
+  }
+
+  // REST API methods - ✅ USE DATABASE-BACKED ENDPOINTS
+  const fetchConversations = async (): Promise<BotConversation[]> => {
+    setLoadingConversations(true)
+    try {
+      const normalized = await fetchConversationsPage(0, CONVERSATIONS_PAGE_SIZE)
+      const deduplicated = deduplicateConversationsByPhone(normalized)
+      setConversations(deduplicated)
+      conversationOffsetRef.current = normalized.length
+      setHasMoreConversations(normalized.length >= CONVERSATIONS_PAGE_SIZE)
+      return deduplicated
+    } finally {
+      setLoadingConversations(false)
+    }
+  }
+
+  const fetchMoreConversations = async (): Promise<BotConversation[]> => {
+    if (!hasMoreConversations || loadingConversations) return conversations
+    setLoadingConversations(true)
+    try {
+      const normalized = await fetchConversationsPage(conversationOffsetRef.current, CONVERSATIONS_PAGE_SIZE)
+      if (normalized.length < CONVERSATIONS_PAGE_SIZE) {
+        setHasMoreConversations(false)
+      }
+      conversationOffsetRef.current += normalized.length
+      const merged = [...conversations, ...normalized]
+      const deduplicated = deduplicateConversationsByPhone(merged)
+      setConversations(deduplicated)
+      return deduplicated
+    } finally {
+      setLoadingConversations(false)
+    }
   }
 
   const fetchMessages = async (conversationId: string): Promise<BotMessage[]> => {
@@ -622,6 +647,8 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
         error,
         botEnabled,
         conversations,
+        hasMoreConversations,
+        loadingConversations,
         subscribeToBootstrap: (handler) => {
           bootstrapHandlers.current.add(handler)
           return () => bootstrapHandlers.current.delete(handler)
@@ -643,6 +670,7 @@ export function BotWebSocketProvider({ children }: { children: ReactNode }) {
           return () => orderHandlers.current.delete(handler)
         },
         fetchConversations,
+        fetchMoreConversations,
         fetchMessages,
         sendMessage,
         sendMedia,

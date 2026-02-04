@@ -54,9 +54,12 @@ export function ChatInterface() {
     status,
     error,
     conversations,
+    hasMoreConversations,
+    loadingConversations,
     subscribeToMessages,
     subscribeToConversationUpdates,
     fetchConversations,
+    fetchMoreConversations,
     fetchMessages,
     sendMessage,
     sendMedia,
@@ -627,7 +630,7 @@ export function ChatInterface() {
                 const isSelected = selectedConversationId === conversation.id
                 const unreadCount = optimisticUnreadCounts[conversation.id] ?? conversation.unread_count ?? 0
                 const hasUnread = unreadCount > 0
-                
+
                 return (
                   <button
                     key={conversation.id}
@@ -668,7 +671,7 @@ export function ChatInterface() {
                           <p className="text-sm text-gray-500 truncate flex-1" dir="ltr">
                             {conversation.customer_phone}
                           </p>
-                          
+
                           <div className="flex items-center gap-1.5 flex-shrink-0">
                             {conversation.is_bot_active && (
                               <div className="flex items-center gap-1 bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
@@ -694,6 +697,23 @@ export function ChatInterface() {
                   </button>
                 )
               })}
+
+              {/* Load More Conversations */}
+              {hasMoreConversations && !searchQuery && (
+                <div className="p-3">
+                  <Button
+                    variant="outline"
+                    className="w-full text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                    onClick={() => fetchMoreConversations()}
+                    disabled={loadingConversations}
+                  >
+                    {loadingConversations ? (
+                      <Loader2 className="h-4 w-4 animate-spin ml-2" />
+                    ) : null}
+                    {loadingConversations ? "جاري التحميل..." : "تحميل المزيد"}
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>

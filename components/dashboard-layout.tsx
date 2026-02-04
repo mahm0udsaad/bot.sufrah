@@ -4,7 +4,7 @@ import type React from "react"
 
 import { useMemo, useState, useEffect } from "react"
 import { usePathname } from "next/navigation"
-import { Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X, Bot, ScrollText, Shield, Star, ChevronLeft, ChevronRight } from "lucide-react"
+import { Menu, Search, Settings, Store, MessageSquare, Package, BarChart3, FileText, X, Bot, ScrollText, Shield, Star, ChevronLeft, ChevronRight, Megaphone, DollarSign } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { SignOutButton } from "@/components/sign-out-button"
@@ -23,12 +23,14 @@ const NAV_ITEMS = [
   { labelKey: "navigation.ratings", href: "/ratings", icon: Star },
   { labelKey: "navigation.catalog", href: "/catalog", icon: Store },
   { labelKey: "navigation.botManagement", href: "/bot-management", icon: Bot },
+  { labelKey: "navigation.campaigns", href: "/campaigns", icon: Megaphone },
   { labelKey: "navigation.usage", href: "/usage", icon: BarChart3 },
 ]
 
 const ADMIN_NAV_ITEMS = [
   { labelKey: "navigation.adminBots", href: "/admin/bots", icon: Shield },
   { labelKey: "navigation.adminUsage", href: "/admin/usage", icon: BarChart3 },
+  { labelKey: "navigation.adminBilling", href: "/admin/billing", icon: DollarSign },
 ]
 
 interface DashboardLayoutProps {

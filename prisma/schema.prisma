@@ -184,6 +184,7 @@ model Restaurant {
   user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   usageLogs          UsageLog[]
   webhookLogs        WebhookLog[]
+  campaigns          Campaign[]
 
   @@index([userId])
   @@map("RestaurantProfile")
@@ -233,10 +234,12 @@ model Template {
   variables            Json?    @default("[]")
   status               String?  @default("draft")
   whatsapp_template_id String?
+  twilio_content_sid   String?
   usage_count          Int?     @default(0)
   created_at           DateTime @default(now())
   updated_at           DateTime @updatedAt
   User                 User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  campaigns            Campaign[]
 
   @@index([status])
   @@index([user_id])
@@ -315,4 +318,62 @@ enum OrderStatus {
   OUT_FOR_DELIVERY
   DELIVERED
   CANCELLED
+}
+
+enum CampaignStatus {
+  DRAFT
+  WAITING_APPROVAL
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum RecipientStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+model Campaign {
+  id              String           @id @default(cuid())
+  restaurantId    String           @map("restaurant_id")
+  name            String
+  templateId      String           @map("template_id")
+  status          CampaignStatus   @default(DRAFT)
+  scheduledAt     DateTime?        @map("scheduled_at")
+  sentAt          DateTime?        @map("sent_at")
+  totalRecipients Int              @default(0) @map("total_recipients")
+  sentCount       Int              @default(0) @map("sent_count")
+  deliveredCount  Int              @default(0) @map("delivered_count")
+  failedCount     Int              @default(0) @map("failed_count")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  restaurant      Restaurant       @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  template        Template         @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  recipients      CampaignRecipient[]
+
+  @@index([restaurantId, createdAt])
+  @@index([status])
+  @@map("Campaign")
+}
+
+model CampaignRecipient {
+  id           String          @id @default(cuid())
+  campaignId   String          @map("campaign_id")
+  phone        String
+  customerName String?         @map("customer_name")
+  status       RecipientStatus @default(PENDING)
+  waSid        String?         @unique @map("wa_sid")
+  errorMessage String?         @map("error_message")
+  sentAt       DateTime?       @map("sent_at")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  campaign     Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@index([campaignId, createdAt])
+  @@index([waSid])
+  @@map("CampaignRecipient")
 }

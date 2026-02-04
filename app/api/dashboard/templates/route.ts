@@ -5,37 +5,58 @@ import { getAuthenticatedUser } from "@/lib/server-auth"
 export async function GET(request: NextRequest) {
   try {
     const user = await getAuthenticatedUser(request)
-
     if (!user) {
       return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
     }
 
-    // Get template usage analytics
-    const templateUsage = await prisma.template.findMany({
-      where: {
-        user_id: user.id,
-        status: "approved",
-        usage_count: { gt: 0 },
-      },
-      select: {
-        name: true,
-        category: true,
-        usage_count: true,
-      },
-      orderBy: { usage_count: "desc" },
-      take: 10,
+    const url = new URL(request.url)
+    const limit = parseInt(url.searchParams.get("limit") || "50", 10)
+
+    const templates = await prisma.template.findMany({
+      where: { user_id: user.id },
+      orderBy: { created_at: "desc" },
+      take: limit,
     })
 
-    // Match previous shape (usage instead of usage_count)
-    return NextResponse.json(
-      templateUsage.map((t: { name: string; category: string; usage_count: number | null }) => ({
-        name: t.name,
-        category: t.category,
-        usage: t.usage_count ?? 0,
-      }))
-    )
+    return NextResponse.json({ templates })
   } catch (error) {
     console.error("Dashboard templates API error:", error)
+    return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const user = await getAuthenticatedUser(request)
+    if (!user) {
+      return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 })
+    }
+
+    const { name, category, language, body_text, footer_text, variables } = await request.json()
+
+    if (!name || !category || !body_text) {
+      return NextResponse.json(
+        { success: false, message: "Name, category, and body text are required" },
+        { status: 400 }
+      )
+    }
+
+    const template = await prisma.template.create({
+      data: {
+        user_id: user.id,
+        name,
+        category,
+        language: language || "en",
+        body_text,
+        footer_text: footer_text || null,
+        variables: variables || [],
+        status: "draft",
+      },
+    })
+
+    return NextResponse.json({ template }, { status: 201 })
+  } catch (error) {
+    console.error("Create template error:", error)
     return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })
   }
 }

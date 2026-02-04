@@ -460,3 +460,124 @@ export const db = {
 }
 
 export type OrderStatus = "DRAFT" | "CONFIRMED" | "PREPARING" | "OUT_FOR_DELIVERY" | "DELIVERED" | "CANCELLED"
+
+// Campaign helpers
+export const campaignDb = {
+  async listCampaigns(
+    restaurantId: string,
+    options: {
+      limit?: number
+      offset?: number
+      status?: string
+    } = {}
+  ) {
+    const { limit = 50, offset = 0, status } = options
+    const effectiveLimit = Math.min(Math.max(limit, 1), 200)
+    const safeOffset = Math.max(offset, 0)
+
+    const where = {
+      restaurantId,
+      ...(status && { status }),
+    }
+
+    const [campaigns, total] = await Promise.all([
+      prisma.campaign.findMany({
+        where,
+        include: { template: true, _count: { select: { recipients: true } } },
+        orderBy: { createdAt: "desc" },
+        take: effectiveLimit,
+        skip: safeOffset,
+      }),
+      prisma.campaign.count({ where }),
+    ])
+
+    return {
+      campaigns,
+      total,
+      hasMore: safeOffset + effectiveLimit < total,
+    }
+  },
+
+  async getCampaign(restaurantId: string, campaignId: string) {
+    return prisma.campaign.findFirst({
+      where: { id: campaignId, restaurantId },
+      include: {
+        template: true,
+        recipients: { orderBy: { createdAt: "asc" } },
+        restaurant: { include: { bots: true } },
+      },
+    })
+  },
+
+  async createCampaign(data: {
+    restaurantId: string
+    name: string
+    templateId: string
+    scheduledAt?: Date
+    recipients: { phone: string; customerName?: string }[]
+  }) {
+    return prisma.campaign.create({
+      data: {
+        restaurantId: data.restaurantId,
+        name: data.name,
+        templateId: data.templateId,
+        scheduledAt: data.scheduledAt,
+        totalRecipients: data.recipients.length,
+        recipients: {
+          create: data.recipients.map((r) => ({
+            phone: r.phone,
+            customerName: r.customerName,
+          })),
+        },
+      },
+      include: { template: true, recipients: true },
+    })
+  },
+
+  async updateCampaign(restaurantId: string, campaignId: string, data: Record<string, any>) {
+    return prisma.campaign.updateMany({
+      where: { id: campaignId, restaurantId },
+      data,
+    })
+  },
+
+  async deleteCampaign(restaurantId: string, campaignId: string) {
+    // Only delete DRAFT campaigns
+    return prisma.campaign.deleteMany({
+      where: { id: campaignId, restaurantId, status: "DRAFT" },
+    })
+  },
+
+  async updateCampaignStatus(campaignId: string, status: string, extra?: Record<string, any>) {
+    return prisma.campaign.update({
+      where: { id: campaignId },
+      data: { status: status as any, ...extra },
+    })
+  },
+
+  async updateRecipientStatus(recipientId: string, status: string, extra?: Record<string, any>) {
+    return prisma.campaignRecipient.update({
+      where: { id: recipientId },
+      data: { status: status as any, ...extra },
+    })
+  },
+
+  async findRecipientByWaSid(waSid: string) {
+    return prisma.campaignRecipient.findUnique({ where: { waSid } })
+  },
+
+  async incrementCampaignCounter(campaignId: string, field: "sentCount" | "deliveredCount" | "failedCount") {
+    return prisma.campaign.update({
+      where: { id: campaignId },
+      data: { [field]: { increment: 1 } },
+    })
+  },
+
+  async getCustomerContacts(restaurantId: string) {
+    return prisma.conversation.findMany({
+      where: { restaurantId },
+      select: { customerWa: true, customerName: true },
+      orderBy: { lastMessageAt: "desc" },
+    })
+  },
+}

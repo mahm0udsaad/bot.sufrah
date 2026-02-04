@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { getAuthenticatedRestaurant } from "@/lib/server-auth"
 import { campaignDb } from "@/lib/db"
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   const restaurant = await getAuthenticatedRestaurant(request)
   if (!restaurant) {

@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getAuthenticatedRestaurant } from "@/lib/server-auth"
 import { prisma } from "@/lib/prisma"
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   console.log("[logs/webhook] GET request received")
   

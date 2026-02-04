@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getAuthenticatedRestaurant } from "@/lib/server-auth"
 
+export const dynamic = 'force-dynamic';
+
 const BOT_API_URL =
   process.env.BOT_API_URL || process.env.NEXT_PUBLIC_BOT_API_URL || "https://bot.sufrah.sa/api"
 const BOT_API_TOKEN = process.env.BOT_API_TOKEN || ""

@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma"
 import { db } from "@/lib/db"
 import { getAuthenticatedRestaurant, getAuthenticatedUser } from "@/lib/server-auth"
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const [restaurant, user] = await Promise.all([

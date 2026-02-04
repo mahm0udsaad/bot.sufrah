@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 import { getAuthenticatedRestaurant } from "@/lib/server-auth"
 import { db } from "@/lib/db"
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const restaurant = await getAuthenticatedRestaurant(request)

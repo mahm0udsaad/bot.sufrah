@@ -2,6 +2,8 @@ import { cookies } from "next/headers"
 import { type NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 
+export const dynamic = 'force-dynamic';
+
 async function checkSenderStatus(senderSid: string, accountSid: string, authToken: string) {
   const basicAuth = Buffer.from(`${accountSid}:${authToken}`).toString("base64")
   const url = `https://messaging.twilio.com/v2/Channels/Senders/${senderSid}`

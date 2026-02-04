@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from '@/lib/server-auth';
 
+export const dynamic = 'force-dynamic';
+
 const BOT_API_URL = process.env.BOT_API_URL || 'https://bot.sufrah.sa';
 const DASHBOARD_PAT = process.env.DASHBOARD_PAT || '';
 

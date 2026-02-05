@@ -98,6 +98,7 @@ export function ChatInterface() {
   const [optimisticUnreadCounts, setOptimisticUnreadCounts] = useState<Record<string, number>>({})
   const [loadingOlderMessages, setLoadingOlderMessages] = useState<Record<string, boolean>>({})
   const [hasMoreMessages, setHasMoreMessages] = useState<Record<string, boolean>>({})
+  const isRtl = true // App is always RTL (Arabic)
   const isInitializedRef = useRef(false)
   const processedMessageIds = useRef<Set<string>>(new Set())
   const audioRef = useRef<HTMLAudioElement | null>(null)

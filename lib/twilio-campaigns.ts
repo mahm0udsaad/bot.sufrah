@@ -228,11 +228,13 @@ export async function submitForWhatsAppApproval(
   const mappedCategory = mapCategory(category)
 
   // WhatsApp requires: lowercase alphanumeric and underscores only
-  const sanitizedName = (templateName || contentSid)
+  const rawName = templateName?.trim() || contentSid
+  const sanitizedName = rawName
     .toLowerCase()
     .replace(/[^a-z0-9_]/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_|_$/g, "")
+    || `template_${contentSid.replace(/[^a-z0-9]/gi, "").slice(-10)}` // Fallback if sanitization results in empty string
 
   const res = await fetch(
     `https://content.twilio.com/v1/Content/${contentSid}/ApprovalRequests/whatsapp`,

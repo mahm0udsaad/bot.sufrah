@@ -30,4 +30,19 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS "RestaurantBot_restaurant_id_idx" ON "RestaurantBot"("restaurant_id");
 CREATE INDEX IF NOT EXISTS "RestaurantBot_status_idx" ON "RestaurantBot"("status");
-CREATE INDEX IF NOT EXISTS "RestaurantBot_subaccountSid_idx" ON "RestaurantBot"("twilioSubaccountSid");
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'RestaurantBot' AND column_name = 'twilioSubaccountSid'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS "RestaurantBot_subaccountSid_idx" ON "RestaurantBot"("twilioSubaccountSid")';
+  ELSIF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_name = 'RestaurantBot' AND column_name = 'subaccountSid'
+  ) THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS "RestaurantBot_subaccountSid_idx" ON "RestaurantBot"("subaccountSid")';
+  END IF;
+END $$;

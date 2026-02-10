@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AuthGuard } from "@/components/auth-guard"
@@ -105,6 +105,7 @@ interface Recipient {
 interface Contact {
   customerWa: string
   customerName: string | null
+  source?: "bot" | "sufrah" | "both"
 }
 
 // ─── API Helpers ─────────────────────────────────────────
@@ -297,7 +298,7 @@ export default function CampaignsPage() {
 
             {/* ─── Tab 3: Contacts ─── */}
             <TabsContent value="contacts" className="space-y-4 mt-4">
-              <ContactsTab contacts={contacts} t={t} dir={dir} isRtl={isRtl} />
+              <ContactsTab contacts={contacts} onRefresh={fetchContacts} t={t} dir={dir} isRtl={isRtl} />
             </TabsContent>
           </Tabs>
         </div>
@@ -684,16 +685,26 @@ function CampaignDetail({
 // ─── Template Type Labels ────────────────────────────────
 
 const TEMPLATE_TYPES = [
-  { value: "twilio/text", labelAr: "نص", labelEn: "Text" },
-  { value: "twilio/media", labelAr: "وسائط (صورة/فيديو)", labelEn: "Media (Image/Video)" },
-  { value: "twilio/call-to-action", labelAr: "دعوة لإجراء", labelEn: "Call to Action" },
-  { value: "twilio/quick-reply", labelAr: "رد سريع", labelEn: "Quick Reply" },
-  { value: "twilio/card", labelAr: "بطاقة", labelEn: "Card" },
-  { value: "twilio/carousel", labelAr: "عرض دوّار", labelEn: "Carousel" },
-  { value: "twilio/catalog", labelAr: "كتالوج", labelEn: "Catalog" },
+  "twilio/text",
+  "twilio/media",
+  "twilio/call-to-action",
+  "twilio/quick-reply",
+  "twilio/card",
+  "twilio/carousel",
+  "twilio/catalog",
 ] as const
 
-type TwilioTemplateType = (typeof TEMPLATE_TYPES)[number]["value"]
+type TwilioTemplateType = (typeof TEMPLATE_TYPES)[number]
+
+const TEMPLATE_TYPE_KEYS: Record<string, string> = {
+  "twilio/text": "campaigns.templateTypes.text",
+  "twilio/media": "campaigns.templateTypes.media",
+  "twilio/call-to-action": "campaigns.templateTypes.callToAction",
+  "twilio/quick-reply": "campaigns.templateTypes.quickReply",
+  "twilio/card": "campaigns.templateTypes.card",
+  "twilio/carousel": "campaigns.templateTypes.carousel",
+  "twilio/catalog": "campaigns.templateTypes.catalog",
+}
 
 interface SubmitAction {
   type: string
@@ -765,7 +776,7 @@ function TemplatesApprovalTab({
             <TableRow>
               <TableHead>{t("templates.table.name") || "Name"}</TableHead>
               <TableHead>{t("templates.table.category") || "Category"}</TableHead>
-              <TableHead>{isRtl ? "النوع" : "Type"}</TableHead>
+              <TableHead>{t("campaigns.templatesTable.type")}</TableHead>
               <TableHead>{t("templates.table.status") || "Status"}</TableHead>
               <TableHead>{t("templates.table.language") || "Language"}</TableHead>
               <TableHead className="text-right">{t("templates.table.actions") || "Actions"}</TableHead>
@@ -783,12 +794,12 @@ function TemplatesApprovalTab({
                 <TableCell>{tmpl.category}</TableCell>
                 <TableCell>
                   <Badge variant="outline" className="text-xs">
-                    {TEMPLATE_TYPES.find((tt) => tt.value === tmpl.twilio_content_sid)?.[isRtl ? "labelAr" : "labelEn"] || (isRtl ? "نص" : "Text")}
+                    {t(TEMPLATE_TYPE_KEYS[tmpl.twilio_content_sid || "twilio/text"] || "campaigns.templateTypes.text")}
                   </Badge>
                 </TableCell>
                 <TableCell>
                   <Badge className={templateStatusColor[tmpl.status || "draft"] || ""}>
-                    {tmpl.status || "draft"}
+                    {t(`templates.status.${(tmpl.status || "draft").toLowerCase()}`)}
                   </Badge>
                 </TableCell>
                 <TableCell className="uppercase">{tmpl.language || "ar"}</TableCell>
@@ -843,7 +854,7 @@ function TemplatesApprovalTab({
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {isRtl ? "إرسال القالب للموافقة" : "Submit Template for Approval"}
+              {t("campaigns.submitForm.dialogTitle")}
               {submitDialog && ` — ${submitDialog.name}`}
             </DialogTitle>
           </DialogHeader>
@@ -1002,8 +1013,7 @@ function TemplateSubmitForm({
   }
 
   const typeLabel = (v: string) => {
-    const found = TEMPLATE_TYPES.find((tt) => tt.value === v)
-    return found ? (isRtl ? found.labelAr : found.labelEn) : v
+    return t(TEMPLATE_TYPE_KEYS[v] || "campaigns.templateTypes.text")
   }
 
   return (
@@ -1011,7 +1021,7 @@ function TemplateSubmitForm({
       {/* Template preview */}
       <Card>
         <CardContent className="p-4">
-          <p className="text-sm font-medium text-muted-foreground mb-1">{isRtl ? "محتوى القالب" : "Template Body"}</p>
+          <p className="text-sm font-medium text-muted-foreground mb-1">{t("campaigns.submitForm.bodyTitle")}</p>
           <p className="text-sm whitespace-pre-wrap" dir={dir}>{template.body_text}</p>
           {template.footer_text && (
             <p className="text-xs text-muted-foreground mt-2 border-t pt-2">{template.footer_text}</p>
@@ -1021,23 +1031,21 @@ function TemplateSubmitForm({
 
       {/* Type selector */}
       <div>
-        <Label>{isRtl ? "نوع القالب" : "Template Type"}</Label>
+        <Label>{t("campaigns.submitForm.typeLabel")}</Label>
         <Select value={templateType} onValueChange={(v) => setTemplateType(v as TwilioTemplateType)}>
           <SelectTrigger dir={dir}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {TEMPLATE_TYPES.map((tt) => (
-              <SelectItem key={tt.value} value={tt.value}>
-                {isRtl ? tt.labelAr : tt.labelEn}
+              <SelectItem key={tt} value={tt}>
+                {t(TEMPLATE_TYPE_KEYS[tt])}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground mt-1">
-          {isRtl
-            ? "اختر نوع القالب المناسب للرسالة التي تريد إرسالها عبر واتساب"
-            : "Choose the template type that matches the WhatsApp message you want to send"}
+          {t("campaigns.submitForm.typeHelp")}
         </p>
       </div>
 
@@ -1046,7 +1054,7 @@ function TemplateSubmitForm({
       {/* MEDIA */}
       {(templateType === "twilio/media" || templateType === "twilio/card") && (
         <div className="space-y-2">
-          <Label>{isRtl ? "روابط الوسائط" : "Media URLs"}</Label>
+          <Label>{t("campaigns.submitForm.mediaUrls")}</Label>
           <div className="flex gap-2">
             <Input
               dir="ltr"
@@ -1056,7 +1064,7 @@ function TemplateSubmitForm({
               onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addMedia())}
             />
             <Button type="button" variant="outline" size="sm" onClick={addMedia}>
-              {isRtl ? "إضافة" : "Add"}
+              {t("campaigns.submitForm.add")}
             </Button>
           </div>
           {mediaUrls.length > 0 && (
@@ -1078,9 +1086,9 @@ function TemplateSubmitForm({
       {templateType === "twilio/call-to-action" && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <Label>{isRtl ? "أزرار الإجراء" : "Action Buttons"}</Label>
+            <Label>{t("campaigns.submitForm.actionButtons")}</Label>
             <Button type="button" variant="outline" size="sm" onClick={addAction}>
-              <Plus className="h-3 w-3 mr-1" /> {isRtl ? "زر" : "Button"}
+              <Plus className="h-3 w-3 mr-1" /> {t("campaigns.submitForm.button")}
             </Button>
           </div>
           {actions.map((action, idx) => (
@@ -1092,14 +1100,14 @@ function TemplateSubmitForm({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="URL">URL</SelectItem>
-                      <SelectItem value="PHONE">{isRtl ? "هاتف" : "Phone"}</SelectItem>
-                      <SelectItem value="COPY_CODE">{isRtl ? "نسخ كود" : "Copy Code"}</SelectItem>
+                      <SelectItem value="URL">{t("campaigns.submitForm.url")}</SelectItem>
+                      <SelectItem value="PHONE">{t("campaigns.submitForm.phone")}</SelectItem>
+                      <SelectItem value="COPY_CODE">{t("campaigns.submitForm.copyCode")}</SelectItem>
                     </SelectContent>
                   </Select>
                   <Input
                     dir={dir}
-                    placeholder={isRtl ? "عنوان الزر (حد 20 حرف)" : "Button title (max 20 chars)"}
+                    placeholder={t("campaigns.submitForm.buttonTitlePlaceholder")}
                     value={action.title}
                     maxLength={20}
                     onChange={(e) => updateAction(idx, "title", e.target.value)}
@@ -1127,16 +1135,16 @@ function TemplateSubmitForm({
       {templateType === "twilio/quick-reply" && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <Label>{isRtl ? "أزرار الرد السريع" : "Quick Reply Buttons"}</Label>
+            <Label>{t("campaigns.submitForm.quickReplyButtons")}</Label>
             <Button type="button" variant="outline" size="sm" onClick={() => setActions((p) => [...p, { type: "QUICK_REPLY", title: "" }])} disabled={actions.length >= 10}>
-              <Plus className="h-3 w-3 mr-1" /> {isRtl ? "زر" : "Button"}
+              <Plus className="h-3 w-3 mr-1" /> {t("campaigns.submitForm.button")}
             </Button>
           </div>
           {actions.map((action, idx) => (
             <div key={idx} className="flex gap-2 items-center">
               <Input
                 dir={dir}
-                placeholder={isRtl ? `زر ${idx + 1} (حد 20 حرف)` : `Button ${idx + 1} (max 20 chars)`}
+                placeholder={t("campaigns.submitForm.buttonLabel", { index: idx + 1 })}
                 value={action.title}
                 maxLength={20}
                 onChange={(e) => updateAction(idx, "title", e.target.value)}
@@ -1146,7 +1154,7 @@ function TemplateSubmitForm({
               </Button>
             </div>
           ))}
-          <p className="text-xs text-muted-foreground">{isRtl ? "حد أقصى 10 أزرار، 20 حرف لكل زر" : "Max 10 buttons, 20 chars each"}</p>
+          <p className="text-xs text-muted-foreground">{t("campaigns.submitForm.quickReplyLimit")}</p>
         </div>
       )}
 
@@ -1154,17 +1162,17 @@ function TemplateSubmitForm({
       {templateType === "twilio/card" && (
         <div className="space-y-3">
           <div>
-            <Label>{isRtl ? "عنوان البطاقة" : "Card Title"}</Label>
-            <Input dir={dir} value={cardTitle} onChange={(e) => setCardTitle(e.target.value)} placeholder={isRtl ? "عنوان البطاقة" : "Card title"} />
+            <Label>{t("campaigns.submitForm.cardTitle")}</Label>
+            <Input dir={dir} value={cardTitle} onChange={(e) => setCardTitle(e.target.value)} placeholder={t("campaigns.submitForm.cardTitlePlaceholder")} />
           </div>
           <div>
-            <Label>{isRtl ? "العنوان الفرعي" : "Subtitle"}</Label>
-            <Input dir={dir} value={cardSubtitle} onChange={(e) => setCardSubtitle(e.target.value)} placeholder={isRtl ? "العنوان الفرعي (اختياري)" : "Subtitle (optional)"} />
+            <Label>{t("campaigns.submitForm.subtitle")}</Label>
+            <Input dir={dir} value={cardSubtitle} onChange={(e) => setCardSubtitle(e.target.value)} placeholder={t("campaigns.submitForm.subtitleOptional")} />
           </div>
           <div className="flex items-center justify-between">
-            <Label>{isRtl ? "أزرار البطاقة" : "Card Buttons"}</Label>
+            <Label>{t("campaigns.submitForm.cardButtons")}</Label>
             <Button type="button" variant="outline" size="sm" onClick={addAction}>
-              <Plus className="h-3 w-3 mr-1" /> {isRtl ? "زر" : "Button"}
+              <Plus className="h-3 w-3 mr-1" /> {t("campaigns.submitForm.button")}
             </Button>
           </div>
           {actions.map((action, idx) => (
@@ -1174,12 +1182,12 @@ function TemplateSubmitForm({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="QUICK_REPLY">{isRtl ? "رد سريع" : "Quick Reply"}</SelectItem>
-                  <SelectItem value="URL">URL</SelectItem>
-                  <SelectItem value="PHONE_NUMBER">{isRtl ? "هاتف" : "Phone"}</SelectItem>
+                  <SelectItem value="QUICK_REPLY">{t("campaigns.templateTypes.quickReply")}</SelectItem>
+                  <SelectItem value="URL">{t("campaigns.submitForm.url")}</SelectItem>
+                  <SelectItem value="PHONE_NUMBER">{t("campaigns.submitForm.phone")}</SelectItem>
                 </SelectContent>
               </Select>
-              <Input dir={dir} placeholder={isRtl ? "عنوان الزر" : "Button title"} value={action.title} maxLength={20} onChange={(e) => updateAction(idx, "title", e.target.value)} />
+              <Input dir={dir} placeholder={t("campaigns.submitForm.buttonTitlePlaceholder")} value={action.title} maxLength={20} onChange={(e) => updateAction(idx, "title", e.target.value)} />
               {action.type === "URL" && (
                 <Input dir="ltr" placeholder="URL" className="flex-1" value={action.url || ""} onChange={(e) => updateAction(idx, "url", e.target.value)} />
               )}
@@ -1195,26 +1203,26 @@ function TemplateSubmitForm({
       {templateType === "twilio/carousel" && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <Label>{isRtl ? "بطاقات العرض الدوّار" : "Carousel Cards"}</Label>
+            <Label>{t("campaigns.submitForm.carouselCards")}</Label>
             <Button type="button" variant="outline" size="sm" onClick={addCard}>
-              <Plus className="h-3 w-3 mr-1" /> {isRtl ? "بطاقة" : "Card"}
+              <Plus className="h-3 w-3 mr-1" /> {t("campaigns.submitForm.card")}
             </Button>
           </div>
           {cards.map((card, ci) => (
             <Card key={ci}>
               <CardContent className="p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">{isRtl ? `بطاقة ${ci + 1}` : `Card ${ci + 1}`}</p>
+                  <p className="text-sm font-medium">{t("campaigns.submitForm.cardLabel", { index: ci + 1 })}</p>
                   {cards.length > 1 && (
                     <Button variant="ghost" size="sm" onClick={() => removeCard(ci)}>
                       <Trash2 className="h-3 w-3" />
                     </Button>
                   )}
                 </div>
-                <Input dir={dir} placeholder={isRtl ? "عنوان" : "Title"} value={card.title} onChange={(e) => updateCard(ci, "title", e.target.value)} />
-                <Input dir={dir} placeholder={isRtl ? "نص البطاقة (حد 160 حرف)" : "Card body (max 160 chars)"} value={card.body} maxLength={160} onChange={(e) => updateCard(ci, "body", e.target.value)} />
-                <Input dir="ltr" placeholder={isRtl ? "رابط الصورة" : "Image URL"} value={card.media} onChange={(e) => updateCard(ci, "media", e.target.value)} />
-                <p className="text-xs text-muted-foreground">{isRtl ? "أزرار (1-2 لكل بطاقة):" : "Buttons (1-2 per card):"}</p>
+                <Input dir={dir} placeholder={t("campaigns.submitForm.cardTitlePlaceholder")} value={card.title} onChange={(e) => updateCard(ci, "title", e.target.value)} />
+                <Input dir={dir} placeholder={t("campaigns.submitForm.cardBodyPlaceholder")} value={card.body} maxLength={160} onChange={(e) => updateCard(ci, "body", e.target.value)} />
+                <Input dir="ltr" placeholder={t("campaigns.submitForm.imageUrlPlaceholder")} value={card.media} onChange={(e) => updateCard(ci, "media", e.target.value)} />
+                <p className="text-xs text-muted-foreground">{t("campaigns.submitForm.buttonsLabel")}</p>
                 {card.actions.map((a, ai) => (
                   <div key={ai} className="flex gap-2 items-center">
                     <Select value={a.type} onValueChange={(v) => updateCardAction(ci, ai, "type", v)}>
@@ -1222,12 +1230,12 @@ function TemplateSubmitForm({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="QUICK_REPLY">{isRtl ? "رد سريع" : "Quick Reply"}</SelectItem>
-                        <SelectItem value="URL">URL</SelectItem>
-                        <SelectItem value="PHONE_NUMBER">{isRtl ? "هاتف" : "Phone"}</SelectItem>
+                        <SelectItem value="QUICK_REPLY">{t("campaigns.templateTypes.quickReply")}</SelectItem>
+                        <SelectItem value="URL">{t("campaigns.submitForm.url")}</SelectItem>
+                        <SelectItem value="PHONE_NUMBER">{t("campaigns.submitForm.phone")}</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Input dir={dir} placeholder={isRtl ? "عنوان" : "Title"} value={a.title} maxLength={25} onChange={(e) => updateCardAction(ci, ai, "title", e.target.value)} />
+                    <Input dir={dir} placeholder={t("campaigns.submitForm.buttonTitlePlaceholder")} value={a.title} maxLength={25} onChange={(e) => updateCardAction(ci, ai, "title", e.target.value)} />
                     {a.type === "URL" && (
                       <Input dir="ltr" placeholder="URL" value={a.url || ""} onChange={(e) => updateCardAction(ci, ai, "url", e.target.value)} />
                     )}
@@ -1242,7 +1250,7 @@ function TemplateSubmitForm({
                       updateCard(ci, "actions", [...card.actions, { type: "QUICK_REPLY", title: "" }])
                     }
                   >
-                    <Plus className="h-3 w-3 mr-1" /> {isRtl ? "زر" : "Button"}
+                    <Plus className="h-3 w-3 mr-1" /> {t("campaigns.submitForm.button")}
                   </Button>
                 )}
               </CardContent>
@@ -1255,23 +1263,23 @@ function TemplateSubmitForm({
       {templateType === "twilio/catalog" && (
         <div className="space-y-3">
           <div>
-            <Label>{isRtl ? "معرّف الكتالوج (من Meta Commerce Manager)" : "Catalog ID (from Meta Commerce Manager)"}</Label>
+            <Label>{t("campaigns.submitForm.catalogId")}</Label>
             <Input dir="ltr" value={catalogId} onChange={(e) => setCatalogId(e.target.value)} placeholder="e.g. 1017234312776586" />
           </div>
           <div>
-            <Label>{isRtl ? "عنوان الكتالوج" : "Catalog Title"}</Label>
-            <Input dir={dir} value={catalogTitle} onChange={(e) => setCatalogTitle(e.target.value)} placeholder={isRtl ? "عنوان (حد 60 حرف)" : "Title (max 60 chars)"} maxLength={60} />
+            <Label>{t("campaigns.submitForm.catalogTitle")}</Label>
+            <Input dir={dir} value={catalogTitle} onChange={(e) => setCatalogTitle(e.target.value)} placeholder={t("campaigns.submitForm.catalogTitlePlaceholder")} maxLength={60} />
           </div>
           <div className="flex items-center justify-between">
-            <Label>{isRtl ? "عناصر الكتالوج" : "Catalog Items"}</Label>
+            <Label>{t("campaigns.submitForm.catalogItems")}</Label>
             <Button type="button" variant="outline" size="sm" onClick={() => setCatalogItems((p) => [...p, { id: "", section_title: "" }])}>
-              <Plus className="h-3 w-3 mr-1" /> {isRtl ? "عنصر" : "Item"}
+              <Plus className="h-3 w-3 mr-1" /> {t("campaigns.submitForm.item")}
             </Button>
           </div>
           {catalogItems.map((item, idx) => (
             <div key={idx} className="flex gap-2 items-center">
-              <Input dir="ltr" placeholder={isRtl ? "معرّف المنتج" : "Product ID"} value={item.id} onChange={(e) => setCatalogItems((p) => p.map((it, i) => (i === idx ? { ...it, id: e.target.value } : it)))} />
-              <Input dir={dir} placeholder={isRtl ? "عنوان القسم" : "Section title"} value={item.section_title} onChange={(e) => setCatalogItems((p) => p.map((it, i) => (i === idx ? { ...it, section_title: e.target.value } : it)))} />
+              <Input dir="ltr" placeholder={t("campaigns.submitForm.productIdPlaceholder")} value={item.id} onChange={(e) => setCatalogItems((p) => p.map((it, i) => (i === idx ? { ...it, id: e.target.value } : it)))} />
+              <Input dir={dir} placeholder={t("campaigns.submitForm.sectionTitlePlaceholder")} value={item.section_title} onChange={(e) => setCatalogItems((p) => p.map((it, i) => (i === idx ? { ...it, section_title: e.target.value } : it)))} />
               <Button variant="ghost" size="sm" onClick={() => setCatalogItems((p) => p.filter((_, i) => i !== idx))}>
                 <Trash2 className="h-3 w-3" />
               </Button>
@@ -1302,42 +1310,178 @@ function TemplateSubmitForm({
 
 function ContactsTab({
   contacts,
+  onRefresh,
   t,
   dir,
   isRtl,
 }: {
   contacts: Contact[]
+  onRefresh: () => Promise<void> | void
   t: (key: string) => string
   dir: string
   isRtl: boolean
 }) {
   const [search, setSearch] = useState("")
+  const [sourceFilter, setSourceFilter] = useState<"all" | "bot" | "sufrah">("all")
+  const [pageSize, setPageSize] = useState(50)
+  const [pageOffset, setPageOffset] = useState(0)
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [exportScope, setExportScope] = useState<"all" | "bot" | "sufrah">("all")
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const filtered = useMemo(() => {
-    if (!search) return contacts
+    const bySource = contacts.filter((c) => {
+      if (sourceFilter === "all") return true
+      if (sourceFilter === "bot") return c.source === "bot" || c.source === "both"
+      return c.source === "sufrah" || c.source === "both"
+    })
+
+    if (!search) return bySource
     const q = search.toLowerCase()
-    return contacts.filter(
+    return bySource.filter(
       (c) =>
         c.customerWa.includes(q) ||
         (c.customerName && c.customerName.toLowerCase().includes(q))
     )
-  }, [contacts, search])
+  }, [contacts, search, sourceFilter])
+
+  useEffect(() => {
+    setPageOffset(0)
+  }, [search, sourceFilter, contacts.length, pageSize])
+
+  const paginated = useMemo(() => {
+    const safeOffset = Math.max(0, pageOffset)
+    const safeSize = Math.min(Math.max(pageSize, 1), 200)
+    return filtered.slice(safeOffset, safeOffset + safeSize)
+  }, [filtered, pageOffset, pageSize])
+
+  const totalFiltered = filtered.length
+  const safePageSize = Math.min(Math.max(pageSize, 1), 200)
+  const safePageOffset = Math.max(0, pageOffset)
+  const currentPage = Math.floor(safePageOffset / safePageSize) + 1
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / safePageSize))
+
+  const handleExport = async () => {
+    try {
+      setExporting(true)
+      const res = await fetch(`/api/campaigns/contacts/export?scope=${exportScope}`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Export failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `clients-${exportScope}.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success(isRtl ? "تم تصدير العملاء بنجاح" : "Clients exported successfully")
+      setExportDialogOpen(false)
+    } catch (error: any) {
+      toast.error(error.message || (isRtl ? "فشل تصدير العملاء" : "Failed to export clients"))
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleImportFile = async (file: File | null) => {
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      toast.error(isRtl ? "يسمح فقط بملفات CSV" : "Only CSV files are supported")
+      return
+    }
+
+    try {
+      setImporting(true)
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch("/api/campaigns/contacts/import", {
+        method: "POST",
+        body: form,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || `Import failed (${res.status})`)
+      }
+
+      const summary = data.summary || {}
+      toast.success(
+        isRtl
+          ? `تم الاستيراد: جديد ${summary.created || 0}، محدث ${summary.updated || 0}`
+          : `Import complete: ${summary.created || 0} created, ${summary.updated || 0} updated`
+      )
+      if ((summary.errors || 0) > 0) {
+        toast.warning(
+          isRtl
+            ? `تم تجاهل ${summary.errors} صفوف بسبب أخطاء.`
+            : `${summary.errors} rows were skipped due to validation errors.`
+        )
+      }
+      await onRefresh()
+    } catch (error: any) {
+      toast.error(error.message || (isRtl ? "فشل استيراد العملاء" : "Failed to import clients"))
+    } finally {
+      setImporting(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
 
   return (
     <div className="space-y-4">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv,text/csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0] || null
+          void handleImportFile(file)
+        }}
+      />
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          {t("campaigns.contacts.total").replace("{count}", String(contacts.length))}
+          {sourceFilter === "all"
+            ? t("campaigns.contacts.total").replace("{count}", String(contacts.length))
+            : `${filtered.length} / ${contacts.length}`}
         </p>
-        <div className="relative w-64">
-          <Search className={cn("absolute top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground", isRtl ? "right-3" : "left-3")} />
-          <Input
-            dir={dir}
-            placeholder={t("campaigns.contacts.search")}
-            className={cn(isRtl ? "pr-10" : "pl-10")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+          >
+            {importing ? (isRtl ? "جاري الاستيراد..." : "Importing...") : (isRtl ? "استيراد CSV" : "Import CSV")}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setExportDialogOpen(true)} disabled={exporting}>
+            {exporting ? (isRtl ? "جاري التصدير..." : "Exporting...") : (isRtl ? "تصدير CSV" : "Export CSV")}
+          </Button>
+          <Select value={sourceFilter} onValueChange={(value) => setSourceFilter(value as "all" | "bot" | "sufrah")}>
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{isRtl ? "كل العملاء" : "All Contacts"}</SelectItem>
+              <SelectItem value="bot">{isRtl ? "عملاء البوت" : "Bot Clients"}</SelectItem>
+              <SelectItem value="sufrah">{isRtl ? "عملاء سفرة" : "Sufrah Clients"}</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <div className="relative w-64">
+            <Search className={cn("absolute top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground", isRtl ? "right-3" : "left-3")} />
+            <Input
+              dir={dir}
+              placeholder={t("campaigns.contacts.search")}
+              className={cn(isRtl ? "pr-10" : "pl-10")}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
@@ -1350,13 +1494,13 @@ function ContactsTab({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((c) => (
+            {paginated.map((c) => (
               <TableRow key={c.customerWa}>
                 <TableCell className="font-mono text-sm">{c.customerWa}</TableCell>
                 <TableCell>{c.customerName || "—"}</TableCell>
               </TableRow>
             ))}
-            {filtered.length === 0 && (
+            {paginated.length === 0 && (
               <TableRow>
                 <TableCell colSpan={2} className="text-center py-8 text-muted-foreground">
                   <Users className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
@@ -1367,6 +1511,112 @@ function ContactsTab({
           </TableBody>
         </Table>
       </div>
+
+      {totalFiltered > 0 && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm text-muted-foreground">
+              {isRtl ? "حجم الصفحة:" : "Page size:"}
+            </Label>
+            <Select
+              value={safePageSize.toString()}
+              onValueChange={(v) => {
+                setPageSize(parseInt(v, 10))
+                setPageOffset(0)
+              }}
+            >
+              <SelectTrigger className="w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="25">25</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+                <SelectItem value="200">200</SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="text-sm text-muted-foreground">
+              {totalFiltered === 0
+                ? "0"
+                : `${safePageOffset + 1}-${Math.min(safePageOffset + safePageSize, totalFiltered)} / ${totalFiltered}`}
+            </span>
+          </div>
+
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={() => setPageOffset(Math.max(0, safePageOffset - safePageSize))}
+                  className={cn(
+                    safePageOffset === 0 && "pointer-events-none opacity-50",
+                    "cursor-pointer"
+                  )}
+                />
+              </PaginationItem>
+              <PaginationItem>
+                <span className="text-sm px-4">
+                  {isRtl ? `الصفحة ${currentPage} من ${totalPages}` : `Page ${currentPage} of ${totalPages}`}
+                </span>
+              </PaginationItem>
+              <PaginationItem>
+                <PaginationNext
+                  onClick={() => {
+                    const nextOffset = safePageOffset + safePageSize
+                    if (nextOffset < totalFiltered) {
+                      setPageOffset(nextOffset)
+                    }
+                  }}
+                  className={cn(
+                    safePageOffset + safePageSize >= totalFiltered &&
+                      "pointer-events-none opacity-50",
+                    "cursor-pointer"
+                  )}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
+
+      <Dialog open={exportDialogOpen} onOpenChange={(open) => !exporting && setExportDialogOpen(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isRtl ? "تصدير العملاء" : "Export Clients"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Label>{isRtl ? "اختر نطاق التصدير" : "Choose export scope"}</Label>
+            <Select
+              value={exportScope}
+              onValueChange={(value) => setExportScope(value as "all" | "bot" | "sufrah")}
+              disabled={exporting}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{isRtl ? "كل العملاء" : "All Clients"}</SelectItem>
+                <SelectItem value="bot">{isRtl ? "عملاء البوت" : "Bot Clients"}</SelectItem>
+                <SelectItem value="sufrah">{isRtl ? "عملاء سفرة" : "Sufrah Clients"}</SelectItem>
+              </SelectContent>
+            </Select>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setExportDialogOpen(false)} disabled={exporting}>
+                {isRtl ? "إلغاء" : "Cancel"}
+              </Button>
+              <Button onClick={() => void handleExport()} disabled={exporting}>
+                {exporting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    {isRtl ? "جاري التصدير..." : "Exporting..."}
+                  </>
+                ) : (
+                  isRtl ? "تصدير" : "Export"
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -60,7 +60,7 @@ export default function UsagePage() {
         <DashboardLayout>
           <div className="flex h-96 items-center justify-center flex-col gap-4">
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
-            <p className="text-muted-foreground animate-pulse font-medium">Calculating usage metrics...</p>
+            <p className="text-muted-foreground animate-pulse font-medium">{t("usage.loading")}</p>
           </div>
         </DashboardLayout>
       </AuthGuard>
@@ -77,7 +77,7 @@ export default function UsagePage() {
                 <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
                   <AlertTriangle className="h-8 w-8 text-destructive" />
                 </div>
-                <CardTitle className="text-destructive text-xl font-black">Error Loading Usage</CardTitle>
+                <CardTitle className="text-destructive text-xl font-black">{t("usage.error.title")}</CardTitle>
                 <CardDescription className="font-medium">{error}</CardDescription>
               </CardHeader>
               <CardContent className="flex justify-center pb-8">
@@ -87,7 +87,7 @@ export default function UsagePage() {
                   ) : (
                     <RefreshCw className="h-4 w-4 mr-2" />
                   )}
-                  Retry Now
+                  {t("usage.actions.retry")}
                 </Button>
               </CardContent>
             </Card>
@@ -123,16 +123,16 @@ export default function UsagePage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
-              <h1 className="text-3xl font-black tracking-tight text-foreground">Usage & Quota</h1>
-              <p className="text-muted-foreground mt-1 text-lg">Monitor your conversation limits and active sessions</p>
+              <h1 className="text-3xl font-black tracking-tight text-foreground">{t("usage.title")}</h1>
+              <p className="text-muted-foreground mt-1 text-lg">{t("usage.subtitle")}</p>
           </div>
           <Button onClick={handleRefresh} disabled={refreshing} variant="outline" className="bg-background shadow-sm border-border/60 rounded-xl h-11 px-6 font-bold">
             {refreshing ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
+              <RefreshCw className={cn("h-4 w-4", isRtl ? "ml-2" : "mr-2")} />
             )}
-            Refresh Metrics
+            {t("usage.actions.refresh")}
           </Button>
         </div>
 
@@ -143,14 +143,14 @@ export default function UsagePage() {
               <CardHeader className="bg-muted/10 border-b border-border/50">
                 <CardTitle className="flex items-center gap-2 text-lg font-black">
                     <Activity className="h-5 w-5 text-primary" />
-                    Monthly Conversation Volume
+                    {t("usage.cards.volume.title")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-8">
                 <div className="space-y-8">
                   <div className="flex items-end justify-between">
                       <div className="space-y-1">
-                        <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">Used Conversations</p>
+                        <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">{t("usage.cards.volume.used")}</p>
                         <div className="flex items-baseline gap-2">
                           <span className="text-5xl font-black tracking-tighter text-primary">{currentUsage.toLocaleString()}</span>
                           {!isUnlimited && (
@@ -167,7 +167,7 @@ export default function UsagePage() {
                           usagePercentage > 70 ? "bg-amber-500/10 text-amber-600 border-amber-200" :
                           "bg-primary/10 text-primary border-primary/20"
                         )}>
-                          {Math.round(usagePercentage)}% CONSUMED
+                          {t("usage.cards.volume.consumed", { percent: Math.round(usagePercentage) })}
                         </Badge>
                       </div>
                   </div>
@@ -188,8 +188,8 @@ export default function UsagePage() {
                         />
                       </div>
                       <div className="flex items-center justify-between text-xs font-bold uppercase tracking-tighter">
-                        <span className="text-muted-foreground">Cycle Progress</span>
-                        <span className="text-foreground">{monthlyRemaining.toLocaleString()} Conversations Remaining</span>
+                        <span className="text-muted-foreground">{t("usage.cards.volume.cycleProgress")}</span>
+                        <span className="text-foreground">{t("usage.cards.volume.remaining", { count: monthlyRemaining.toLocaleString() })}</span>
                       </div>
                     </div>
                   )}
@@ -205,11 +205,13 @@ export default function UsagePage() {
                           <AlertTriangle className="h-5 w-5 text-amber-600" />
                         </div>
                         <div className="flex-1">
-                          <p className="text-sm font-black text-amber-900">Approaching Monthly Limit</p>
-                          <p className="text-xs text-amber-800 font-medium opacity-80">You've consumed {Math.round(usagePercentage)}% of your allowance. Consider a top-up to avoid service interruption.</p>
+                          <p className="text-sm font-black text-amber-900">{t("usage.cards.volume.approaching")}</p>
+                          <p className="text-xs text-amber-800 font-medium opacity-80">
+                            {t("usage.cards.volume.approachingDesc", { percent: Math.round(usagePercentage) })}
+                          </p>
                         </div>
                         <Button size="sm" className="bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg h-9">
-                          Upgrade
+                          {t("usage.actions.upgrade")}
                         </Button>
                       </motion.div>
                     )}
@@ -221,8 +223,8 @@ export default function UsagePage() {
                         <ShieldCheck className="h-5 w-5 text-emerald-600" />
                       </div>
                       <div className="flex-1">
-                        <p className="text-sm font-black text-emerald-900">Unlimited Enterprise Plan</p>
-                        <p className="text-xs text-emerald-800 font-medium opacity-80">Your account is on an unlimited plan with no monthly conversation restrictions.</p>
+                        <p className="text-sm font-black text-emerald-900">{t("usage.cards.volume.unlimited")}</p>
+                        <p className="text-xs text-emerald-800 font-medium opacity-80">{t("usage.cards.volume.unlimitedDesc")}</p>
                       </div>
                     </div>
                   )}
@@ -236,16 +238,16 @@ export default function UsagePage() {
               <CardHeader className="bg-muted/10 border-b border-border/50">
                 <CardTitle className="flex items-center gap-2 text-lg font-black">
                     <Zap className="h-5 w-5 text-amber-500" />
-                    Quota Allocation
+                    {t("usage.cards.quota.title")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6">
                 <div className="space-y-6">
                   {[
-                    { label: "Plan Base Limit", value: isUnlimited ? 'Unlimited' : monthlyLimit.toLocaleString(), icon: Calendar, color: "text-blue-500" },
-                    { label: "Total Top-ups", value: adjustedBy > 0 ? `+${adjustedBy.toLocaleString()}` : "0", icon: ArrowUpRight, color: adjustedBy > 0 ? "text-emerald-500" : "text-muted-foreground" },
-                    { label: "Effective Limit", value: isUnlimited ? 'Unlimited' : effectiveLimit.toLocaleString(), icon: Award, color: "text-primary", highlight: true },
-                    { label: "Active Sessions", value: activeSessionsCount, icon: Users, color: "text-purple-500" }
+                    { label: t("usage.cards.quota.planLimit"), value: isUnlimited ? t("usage.cards.quota.unlimited") : monthlyLimit.toLocaleString(), icon: Calendar, color: "text-blue-500" },
+                    { label: t("usage.cards.quota.topups"), value: adjustedBy > 0 ? `+${adjustedBy.toLocaleString()}` : "0", icon: ArrowUpRight, color: adjustedBy > 0 ? "text-emerald-500" : "text-muted-foreground" },
+                    { label: t("usage.cards.quota.effectiveLimit"), value: isUnlimited ? t("usage.cards.quota.unlimited") : effectiveLimit.toLocaleString(), icon: Award, color: "text-primary", highlight: true },
+                    { label: t("usage.cards.quota.activeSessions"), value: activeSessionsCount, icon: Users, color: "text-purple-500" }
                   ].map((row, i) => (
                     <div key={i} className={cn(
                       "flex items-center justify-between p-4 rounded-xl transition-all",
@@ -278,18 +280,18 @@ export default function UsagePage() {
                   <CardHeader className="bg-muted/10 border-b border-border/50">
                     <CardTitle className="flex items-center gap-2 text-lg font-black">
                       <Calendar className="h-5 w-5 text-purple-600" />
-                      Daily Traffic Analysis
+                      {t("usage.cards.daily.title")}
                     </CardTitle>
-                    <CardDescription className="font-medium">Recent activity breakdown by day</CardDescription>
+                    <CardDescription className="font-medium">{t("usage.cards.daily.description")}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader className="bg-muted/20">
                           <TableRow className="hover:bg-transparent border-border/50">
-                            <TableHead className="font-black py-4">DATE</TableHead>
-                            <TableHead className="text-right font-black py-4">CONVERSATIONS</TableHead>
-                            <TableHead className="text-right font-black py-4">MESSAGE VOLUME</TableHead>
+                            <TableHead className="font-black py-4 text-start">{t("usage.cards.daily.date")}</TableHead>
+                            <TableHead className="text-right font-black py-4">{t("usage.cards.daily.conversations")}</TableHead>
+                            <TableHead className="text-right font-black py-4">{t("usage.cards.daily.volume")}</TableHead>
                             <TableHead className="w-10"></TableHead>
                           </TableRow>
                         </TableHeader>
@@ -335,19 +337,19 @@ export default function UsagePage() {
                   <CardHeader className="bg-muted/10 border-b border-border/50">
                     <CardTitle className="flex items-center gap-2 text-lg font-black">
                       <Clock className="h-5 w-5 text-blue-600" />
-                      Live Session Monitor
+                      {t("usage.cards.sessions.title")}
                     </CardTitle>
-                    <CardDescription className="font-medium">The last 20 active 24-hour interaction windows</CardDescription>
+                    <CardDescription className="font-medium">{t("usage.cards.sessions.description")}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader className="bg-muted/20">
                           <TableRow className="hover:bg-transparent border-border/50">
-                            <TableHead className="font-black py-4">CUSTOMER IDENTITY</TableHead>
-                            <TableHead className="font-black py-4">SESSION START</TableHead>
-                            <TableHead className="font-black py-4">LAST ACTIVITY</TableHead>
-                            <TableHead className="text-right font-black py-4">MESSAGES</TableHead>
+                            <TableHead className="font-black py-4 text-start">{t("usage.cards.sessions.customer")}</TableHead>
+                            <TableHead className="font-black py-4 text-start">{t("usage.cards.sessions.start")}</TableHead>
+                            <TableHead className="font-black py-4 text-start">{t("usage.cards.sessions.lastActivity")}</TableHead>
+                            <TableHead className="text-right font-black py-4">{t("usage.cards.sessions.messages")}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -392,9 +394,9 @@ export default function UsagePage() {
                   <CardHeader className="bg-emerald-500/10 border-b border-emerald-500/20">
                     <CardTitle className="flex items-center gap-2 text-lg font-black text-emerald-900">
                       <Award className="h-5 w-5 text-emerald-600" />
-                      Grant History
+                      {t("usage.cards.history.title")}
                     </CardTitle>
-                    <CardDescription className="text-emerald-800/70 font-bold uppercase tracking-widest text-[10px]">Manual top-ups this cycle</CardDescription>
+                    <CardDescription className="text-emerald-800/70 font-bold uppercase tracking-widest text-[10px]">{t("usage.cards.history.description")}</CardDescription>
                   </CardHeader>
                   <CardContent className="p-4">
                     <div className="space-y-3">
@@ -428,26 +430,26 @@ export default function UsagePage() {
                     </div>
                     <div className="space-y-4">
                       <h3 className="text-xl font-black text-primary leading-tight">
-                        Understanding Conversation Quotas
+                        {t("usage.cards.info.title")}
                       </h3>
                       <div className="space-y-4 text-sm font-medium text-primary/80 leading-relaxed">
                         <p>
-                          Usage is tracked based on <span className="font-black text-primary underline decoration-primary/30">unique 24-hour sessions</span>. A conversation is counted only when a customer interacts with your bot.
+                          {t("usage.cards.info.desc1")} <span className="font-black text-primary underline decoration-primary/30">{t("usage.cards.info.desc1Highlight")}</span>{t("usage.cards.info.desc1End")}
                         </p>
                         <p>
-                          Multiple messages within the same session window are consolidated. This allows for rich customer engagement without depleting your quota.
+                          {t("usage.cards.info.desc2")}
                         </p>
                         {adjustedBy > 0 && (
                           <div className="p-4 bg-background/50 rounded-xl border border-primary/10">
                             <p className="font-black text-primary">
-                              Pro Tip: Your top-up of {adjustedBy.toLocaleString()} messages is valid until the end of this billing cycle.
+                              {t("usage.cards.info.proTip", { count: adjustedBy.toLocaleString() })}
                             </p>
                           </div>
                         )}
                       </div>
                       <Button className="w-full bg-primary text-primary-foreground font-black rounded-xl h-11 shadow-lg shadow-primary/20">
-                        Detailed Usage Guide
-                        <ArrowUpRight className="ml-2 h-4 w-4" />
+                        {t("usage.cards.info.button")}
+                        <ArrowUpRight className={cn("h-4 w-4", isRtl ? "mr-2" : "ml-2")} />
                       </Button>
                     </div>
                   </div>
@@ -460,19 +462,19 @@ export default function UsagePage() {
               <motion.div variants={itemAnim}>
                 <Card className="border-border/50 shadow-sm overflow-hidden bg-muted/20">
                   <CardHeader className="pb-4">
-                    <CardTitle className="text-sm font-black uppercase tracking-widest text-muted-foreground">Historical Context</CardTitle>
+                    <CardTitle className="text-sm font-black uppercase tracking-widest text-muted-foreground">{t("usage.cards.context.title")}</CardTitle>
                   </CardHeader>
                   <CardContent className="px-6 pb-8">
                     <div className="flex items-center justify-between">
                       <div className="space-y-1">
-                        <p className="text-[10px] font-black text-muted-foreground uppercase">Launch Date</p>
+                        <p className="text-[10px] font-black text-muted-foreground uppercase">{t("usage.cards.context.launchDate")}</p>
                         <p className="text-lg font-black text-foreground">
                           {new Date(usage.firstActivity).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>
                       </div>
                       <div className="h-8 w-px bg-border/50" />
                       <div className="space-y-1 text-right">
-                        <p className="text-[10px] font-black text-muted-foreground uppercase">Last Activity</p>
+                        <p className="text-[10px] font-black text-muted-foreground uppercase">{t("usage.cards.context.lastActivity")}</p>
                         <p className="text-lg font-black text-foreground">
                           {new Date(usage.lastActivity).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })}
                         </p>

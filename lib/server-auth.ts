@@ -1,6 +1,7 @@
 import { type NextRequest } from "next/server"
 import { cookies } from "next/headers"
 import { db } from "@/lib/db"
+import prisma from "@/lib/prisma"
 
 /**
  * Get the authenticated user from the request
@@ -44,6 +45,32 @@ export async function getAuthenticatedRestaurant(request: NextRequest) {
     if (!user) {
       console.log("[server-auth] ❌ Cannot fetch restaurant - user not authenticated")
       return null
+    }
+
+    // If client sends X-Restaurant-Id, resolve it first.
+    // Supports both RestaurantProfile.id and RestaurantBot.id.
+    const requestedRestaurantId =
+      request.headers.get("x-restaurant-id") ||
+      request.headers.get("X-Restaurant-Id")
+
+    if (requestedRestaurantId) {
+      const directRestaurant = await prisma.restaurant.findFirst({
+        where: { id: requestedRestaurantId, userId: user.id },
+        include: { bots: true },
+      })
+      if (directRestaurant) {
+        console.log("[server-auth] ✅ Restaurant resolved from header (restaurant id):", directRestaurant.id)
+        return directRestaurant
+      }
+
+      const botRestaurant = await prisma.restaurantBot.findFirst({
+        where: { id: requestedRestaurantId },
+        include: { restaurant: { include: { bots: true } } },
+      })
+      if (botRestaurant?.restaurant?.userId === user.id) {
+        console.log("[server-auth] ✅ Restaurant resolved from header (bot id):", botRestaurant.restaurant.id)
+        return botRestaurant.restaurant
+      }
     }
 
     const restaurant = await db.getPrimaryRestaurantByUserId(user.id)
@@ -104,4 +131,3 @@ export async function getServerSession() {
     return null
   }
 }
-

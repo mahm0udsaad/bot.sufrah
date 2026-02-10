@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AuthGuard } from "@/components/auth-guard"
@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -54,6 +55,7 @@ interface Template {
 interface Contact {
   customerWa: string
   customerName: string | null
+  source?: "bot" | "sufrah" | "both"
 }
 
 const TEMPLATE_TYPES = [
@@ -107,6 +109,11 @@ export default function CreateCampaignPage() {
 
   const [templates, setTemplates] = useState<Template[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
+  const [importingContacts, setImportingContacts] = useState(false)
+  const [exportingContacts, setExportingContacts] = useState(false)
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [exportScope, setExportScope] = useState<"all" | "bot" | "sufrah">("all")
+  const contactsFileInputRef = useRef<HTMLInputElement | null>(null)
 
   // ── Campaign fields ──
   const [campaignName, setCampaignName] = useState("")
@@ -145,17 +152,22 @@ export default function CreateCampaignPage() {
   ])
 
   // ── Fetch data ──
+  const fetchContacts = useCallback(async () => {
+    const data = await apiFetch<{ contacts: Contact[] }>("/api/campaigns/contacts")
+    setContacts(data.contacts || [])
+  }, [])
+
   useEffect(() => {
     setLoading(true)
     Promise.all([
       apiFetch<{ templates: Template[] }>("/api/dashboard/templates?limit=200").then((d) =>
         setTemplates(d.templates || [])
       ),
-      apiFetch<{ contacts: Contact[] }>("/api/campaigns/contacts").then((d) => setContacts(d.contacts)),
+      fetchContacts(),
     ])
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [fetchContacts])
 
   const approvedTemplates = templates.filter((t) => t.status === "APPROVED")
 
@@ -398,6 +410,73 @@ export default function CreateCampaignPage() {
 
   const templatePreview = getCurrentTemplatePreview()
 
+  const handleExportContacts = async () => {
+    try {
+      setExportingContacts(true)
+      const res = await fetch(`/api/campaigns/contacts/export?scope=${exportScope}`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Export failed (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `clients-${exportScope}.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      toast.success(isRtl ? "تم تصدير العملاء بنجاح" : "Clients exported successfully")
+      setExportDialogOpen(false)
+    } catch (error: any) {
+      toast.error(error.message || (isRtl ? "فشل تصدير العملاء" : "Failed to export clients"))
+    } finally {
+      setExportingContacts(false)
+    }
+  }
+
+  const handleImportContacts = async (file: File | null) => {
+    if (!file) return
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      toast.error(isRtl ? "يسمح فقط بملفات CSV" : "Only CSV files are supported")
+      return
+    }
+
+    try {
+      setImportingContacts(true)
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch("/api/campaigns/contacts/import", {
+        method: "POST",
+        body: form,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || `Import failed (${res.status})`)
+      }
+      const summary = data.summary || {}
+      toast.success(
+        isRtl
+          ? `تم الاستيراد: جديد ${summary.created || 0}، محدث ${summary.updated || 0}`
+          : `Import complete: ${summary.created || 0} created, ${summary.updated || 0} updated`
+      )
+      if ((summary.errors || 0) > 0) {
+        toast.warning(
+          isRtl
+            ? `تم تجاهل ${summary.errors} صفوف بسبب أخطاء.`
+            : `${summary.errors} rows were skipped due to validation errors.`
+        )
+      }
+      await fetchContacts()
+    } catch (error: any) {
+      toast.error(error.message || (isRtl ? "فشل استيراد العملاء" : "Failed to import clients"))
+    } finally {
+      setImportingContacts(false)
+      if (contactsFileInputRef.current) contactsFileInputRef.current.value = ""
+    }
+  }
+
   if (loading) {
     return (
       <AuthGuard>
@@ -414,6 +493,16 @@ export default function CreateCampaignPage() {
     <AuthGuard>
       <DashboardLayout>
         <div className="space-y-6 max-w-5xl mx-auto">
+          <input
+            ref={contactsFileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0] || null
+              void handleImportContacts(file)
+            }}
+          />
           {/* Header */}
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => router.push("/campaigns")}>
@@ -918,6 +1007,27 @@ export default function CreateCampaignPage() {
                     ))}
                   </div>
 
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={importingContacts}
+                      onClick={() => contactsFileInputRef.current?.click()}
+                    >
+                      {importingContacts ? (isRtl ? "جاري الاستيراد..." : "Importing...") : (isRtl ? "استيراد CSV" : "Import CSV")}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setExportDialogOpen(true)}
+                      disabled={exportingContacts}
+                    >
+                      {exportingContacts ? (isRtl ? "جاري التصدير..." : "Exporting...") : (isRtl ? "تصدير CSV" : "Export CSV")}
+                    </Button>
+                  </div>
+
                   {recipientMode === "all" && (
                     <p className="text-sm text-muted-foreground">
                       {t("campaigns.contacts.total").replace("{count}", String(contacts.length))}
@@ -1087,6 +1197,45 @@ export default function CreateCampaignPage() {
             </div>
           </div>
         </div>
+        <Dialog open={exportDialogOpen} onOpenChange={(open) => !exportingContacts && setExportDialogOpen(open)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{isRtl ? "تصدير العملاء" : "Export Clients"}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Label>{isRtl ? "اختر نطاق التصدير" : "Choose export scope"}</Label>
+              <Select
+                value={exportScope}
+                onValueChange={(value) => setExportScope(value as "all" | "bot" | "sufrah")}
+                disabled={exportingContacts}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{isRtl ? "كل العملاء" : "All Clients"}</SelectItem>
+                  <SelectItem value="bot">{isRtl ? "عملاء البوت" : "Bot Clients"}</SelectItem>
+                  <SelectItem value="sufrah">{isRtl ? "عملاء سفرة" : "Sufrah Clients"}</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setExportDialogOpen(false)} disabled={exportingContacts}>
+                  {isRtl ? "إلغاء" : "Cancel"}
+                </Button>
+                <Button onClick={() => void handleExportContacts()} disabled={exportingContacts}>
+                  {exportingContacts ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      {isRtl ? "جاري التصدير..." : "Exporting..."}
+                    </>
+                  ) : (
+                    isRtl ? "تصدير" : "Export"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DashboardLayout>
     </AuthGuard>
   )

@@ -98,10 +98,35 @@ export const db = {
 
   // Restaurants
   async getPrimaryRestaurantByUserId(userId: string) {
-    return prisma.restaurant.findFirst({ 
+    const restaurants = await prisma.restaurant.findMany({
       where: { userId },
-      include: { bots: true } // Include bot relation
+      include: {
+        bots: true,
+        _count: { select: { conversations: true } },
+      },
+      orderBy: { updatedAt: "desc" },
     })
+
+    if (restaurants.length === 0) return null
+
+    // Deterministic primary restaurant selection:
+    // prefer records that are actively used (conversations), then bot-linked, then active status.
+    const ranked = [...restaurants].sort((a, b) => {
+      const score = (r: any) =>
+        (r?._count?.conversations > 0 ? 100 : 0) +
+        (r?.bots ? 10 : 0) +
+        (r?.status === "ACTIVE" ? 5 : 0) +
+        (r?.name && r.name !== "My Restaurant" ? 1 : 0)
+
+      const diff = score(b) - score(a)
+      if (diff !== 0) return diff
+
+      const aTime = new Date(a.updatedAt).getTime()
+      const bTime = new Date(b.updatedAt).getTime()
+      return bTime - aTime
+    })
+
+    return ranked[0]
   },
 
   async getRestaurantById(restaurantId: string) {
